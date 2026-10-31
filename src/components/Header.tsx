@@ -33,7 +33,9 @@ export const Header: React.FC<HeaderProps> = ({
     transactions: "Transactions",
     budgets: "Budgets",
     travel: "Travel",
-    settings: "Settings & backups"
+    settings: "Settings & backups",
+    food: "Food & Dining", subscriptions: "Subscriptions", transport: "Transport & Fuel",
+    home: "Home & Utilities", care: "Personal Care & Wellness", shopping: "Shopping"
   };
 
   const now = new Date();

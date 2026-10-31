@@ -4,6 +4,7 @@ import type { MonthlyFinancialSummary, CategoryBudget, Account } from "../types"
 import { formatPaiseToRupees, addPaise } from "../utils/money";
 import { formatMonthLabel } from "../utils/dates";
 import { calculateCashPosition, computeBudgetProgress } from "../utils/finance";
+import type { WorkspaceId } from "../utils/workspaces";
 
 interface DashboardViewProps {
   summary: MonthlyFinancialSummary;
@@ -16,11 +17,13 @@ interface DashboardViewProps {
   onNavigateToTransactions: () => void;
   onNavigateToBudgets: () => void;
   onOpenAddTransaction: () => void;
+  workspaceSummaries: { id: WorkspaceId; title: string; totalPaise: number; travelPaise: number }[];
+  onNavigateToWorkspace: (workspaceId: WorkspaceId) => void;
 }
 
 export function DashboardView({ summary, categoryBreakdown, budgets, accounts, accountBalances,
   selectedMonth, transactionCount, onNavigateToTransactions, onNavigateToBudgets,
-  onOpenAddTransaction }: DashboardViewProps) {
+  onOpenAddTransaction, workspaceSummaries, onNavigateToWorkspace }: DashboardViewProps) {
   const { liquidCashPaise, creditDebtPaise, netCashPositionPaise } = calculateCashPosition(accounts, accountBalances);
   const budgetRows = budgets.map((budget) => {
     const spent = categoryBreakdown.find((category) => category.name === budget.category)?.spentPaise || 0;
@@ -86,6 +89,16 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
           </div>
           <div className="metric-subtext">{summary.totalInflowPaise > 0 ? "Net savings as a share of income" : "Record income to calculate this"}</div>
         </div>
+      </section>
+
+      <section className="panel-card workspace-launcher">
+        <div className="panel-header"><h3 className="panel-title">Explore your spending</h3><span className="panel-caption">Household + your travel shares</span></div>
+        <p className="panel-note">These personal-spending views include trip shares. They are not extra expenses in the cash-flow summary above.</p>
+        <div className="workspace-launch-grid">{workspaceSummaries.map((workspace) =>
+          <button className={`workspace-launch-card workspace-${workspace.id}`} key={workspace.id} onClick={() => onNavigateToWorkspace(workspace.id)}>
+            <span>{workspace.title}<ArrowRight size={14} /></span><strong className="font-mono">{formatPaiseToRupees(workspace.totalPaise)}</strong>
+            <small>{workspace.travelPaise > 0 ? `${formatPaiseToRupees(workspace.travelPaise)} from travel` : "Open monthly dashboard"}</small>
+          </button>)}</div>
       </section>
 
       {(alerts.length > 0 || deficit) && (

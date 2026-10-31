@@ -55,7 +55,8 @@
     * **Theme Persistence**: Icon-only sun/moon control in the top header; preference retained in local configuration. The icon indicates the theme the button switches to.
   * **Typography**: Professional typography via **Inter** (clean UI labels) and **JetBrains Mono** (monospace tabular figures for currency).
 * **Navigation Architecture**:
-  * Fixed 250px left sidebar with tab routing: **Dashboard**, **Transactions**, **Budgets**, **Settings & Backups**.
+  * Scrollable grouped sidebar: **Dashboard**, **Transactions**, **Budgets**,
+    **Travel**, and six spending workspaces. **Settings & Backups** stays at the bottom.
   * Dynamic top header displaying current view title, active month pill (`October 2026`), and a persistent `+ Add Transaction` quick-action button.
   * Local-first status badge: *"Offline & Private"*.
 
@@ -94,6 +95,38 @@
   * Immediate in-line row deletion with automatic recalculation of all application totals.
 
 ---
+
+### Connected Category Dashboards (V1)
+
+- **Food & Dining**: Groceries, Dining Out, and travel food shares.
+- **Subscriptions**: Recorded service charges, merchant grouping, recurring
+  markers; no inferred renewal dates or automatic billing.
+- **Transport & Fuel**: Fuel, Transport, and travel transport/fuel shares.
+- **Home & Utilities**: Rent, Utilities, Home, and separately labeled trip stays.
+- **Personal Care & Wellness**: Personal Care and existing Healthcare entries.
+- **Shopping**: Purchases by merchant and travel shopping shares.
+- Classification uses category mappings. Optional tags supply searchable
+  context; they never move spending into a category.
+- Monthly personal spending equals standalone household expense amounts plus
+  `mySharePaise` from original trip expenses dated in that month. Group amounts
+  and payer amounts are not substituted for personal shares.
+- A nullable unique `Transaction.tripExpenseId` explicitly links an already
+  recorded account payment. Linked payments are excluded from personal category
+  totals while the original source exists, regardless of payment month. No
+  matching by title/date/amount, and no automatic account payment creation.
+- Household category plans use the same account-ledger amounts and dates as
+  Monthly Budgets, including linked payments, without adding travel shares.
+  Remaining allowance is calculated per budgeted category. Unbudgeted spending
+  is labeled rather than deducted from other limits.
+- Travel retains its trip-wide group budgets and splits. Source navigation
+  opens the original trip ledger; category links on trip rows select the expense
+  month. Deleting a source/trip clears links but preserves account payments.
+- SQLite migration 005 is additive and atomic. Native deletion clears references
+  via a trigger; browser preview performs explicit multi-collection rollback on
+  write errors. Browser category defaults migrate once, preserving deletions.
+- Shared projection helpers and a scoped workspace stylesheet keep feature
+  UX configurable without duplicating finance records. Inventory, billing
+  scheduling, automation, and new settlement systems remain out of scope.
 
 ### Pillar 4: Category Budgets & Overspend Alert Engine
 * **Household Category Taxonomy**:

@@ -23,6 +23,8 @@ pub struct Transaction {
     pub tags: Vec<String>,
     pub is_recurring: bool,
     pub amount_paise: i64, // Exact positive integer paise
+    #[serde(default)]
+    pub trip_expense_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

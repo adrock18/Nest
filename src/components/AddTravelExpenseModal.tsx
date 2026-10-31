@@ -16,12 +16,13 @@ import {
 import { Trip, TripExpense, TravelCategory, SplitType } from "../types";
 import { parseRupeesToPaise, formatPaiseToRupees } from "../utils/money";
 import { TRAVEL_CATEGORIES, computeExpenseShares } from "../utils/travel";
+import { getLocalDate, isValidStrictCalendarDate } from "../utils/dates";
 
 interface AddTravelExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeTrip: Trip | null;
-  onAddExpense: (expense: Omit<TripExpense, "id">) => void;
+  onAddExpense: (expense: Omit<TripExpense, "id">) => Promise<void>;
 }
 
 export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
@@ -34,7 +35,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
     ? activeTrip.members
     : ["Me"];
 
-  const defaultDate = activeTrip?.startDate || new Date().toISOString().split("T")[0];
+  const defaultDate = activeTrip?.startDate || getLocalDate();
 
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<TravelCategory>("activities");
@@ -45,6 +46,8 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   const [selectedSplitMembers, setSelectedSplitMembers] = useState<string[]>(members);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const close = () => { if (!isSaving) onClose(); };
 
   useEffect(() => {
     if (isOpen) {
@@ -115,8 +118,9 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
     setTitle(preset);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     setError(null);
 
     if (!title.trim()) {
@@ -124,8 +128,8 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
       return;
     }
 
-    if (!date) {
-      setError("Please select a date.");
+    if (!isValidStrictCalendarDate(date)) {
+      setError("Please select a valid calendar date.");
       return;
     }
 
@@ -154,20 +158,23 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
       "Me"
     );
 
-    onAddExpense({
-      tripId: activeTrip.id,
-      date,
-      title: title.trim(),
-      category,
-      amountPaise,
-      paidBy,
-      splitType,
-      splitMembers: finalSplitMembers,
-      mySharePaise,
-      notes: notes.trim() || undefined
-    });
-
-    onClose();
+    setIsSaving(true);
+    try {
+      await onAddExpense({
+        tripId: activeTrip.id,
+        date,
+        title: title.trim(),
+        category,
+        amountPaise,
+        paidBy,
+        splitType,
+        splitMembers: finalSplitMembers,
+        mySharePaise,
+        notes: notes.trim() || undefined
+      });
+      onClose();
+    } catch (err) { setError(`Could not record travel expense: ${String(err)}`); }
+    finally { setIsSaving(false); }
   };
 
   const renderCategoryIcon = (cat: TravelCategory) => {
@@ -185,7 +192,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   const currentCategoryMeta = TRAVEL_CATEGORIES[category];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={close}>
       <div 
         className="modal-container"
         style={{ maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}
@@ -213,7 +220,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
               </p>
             </div>
           </div>
-          <button className="btn-close" onClick={onClose} aria-label="Close dialog">
+          <button className="btn-close" onClick={close} aria-label="Close dialog" disabled={isSaving}>
             <X size={16} />
           </button>
         </div>
@@ -513,11 +520,11 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
 
           {/* Footer */}
           <div className="modal-footer" style={{ marginTop: "14px" }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>
+            <button type="button" className="btn-secondary" onClick={close} disabled={isSaving}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              Record Expense
+            <button type="submit" className="btn-primary" disabled={isSaving}>
+              {isSaving ? "Saving..." : "Record Expense"}
             </button>
           </div>
         </form>

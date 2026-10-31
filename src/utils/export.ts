@@ -10,11 +10,11 @@ export interface AnalysisExportData {
 
 export function exportTransactionsToCsv(transactions: Transaction[], accountMap: Record<string, string>): string {
   const quote = (value: string) => `"${value.replace(/"/g, '""')}"`;
-  const headers = ["ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)"];
+  const headers = ["ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)", "Travel Expense ID"];
   return [headers.join(","), ...transactions.map((tx) => [
     quote(tx.id), quote(tx.date), quote(tx.type), quote(accountMap[tx.accountId] || tx.accountId),
     quote(tx.category), quote(tx.tags.join(" ")), tx.isRecurring ? "YES" : "NO",
-    quote(tx.notes), formatPaiseToDecimal(tx.amountPaise), String(tx.amountPaise)
+    quote(tx.notes), formatPaiseToDecimal(tx.amountPaise), String(tx.amountPaise), quote(tx.tripExpenseId || "")
   ].join(","))].join("\n");
 }
 
@@ -163,7 +163,7 @@ export function buildAnalysisSheet(data: AnalysisExportData, delimiter: "," | "\
   lines.push("");
 
   // SECTION 4: COMPLETE ITEMIZED TRANSACTION LEDGER
-  lines.push([q("4. ITEMIZED TRANSACTION LEDGER"), q("DATE"), q("FLOW TYPE"), q("ACCOUNT"), q("CATEGORY"), q("RECURRING"), q("NOTES / MERCHANT"), q("TAGS"), q("AMOUNT (INR)"), q("AMOUNT (PAISE)")].join(d));
+  lines.push([q("4. ITEMIZED TRANSACTION LEDGER"), q("DATE"), q("FLOW TYPE"), q("ACCOUNT"), q("CATEGORY"), q("RECURRING"), q("NOTES / MERCHANT"), q("TAGS"), q("AMOUNT (INR)"), q("AMOUNT (PAISE)"), q("TRAVEL EXPENSE ID")].join(d));
   for (const t of safeTransactions) {
     lines.push([
       q(t.id),
@@ -175,7 +175,8 @@ export function buildAnalysisSheet(data: AnalysisExportData, delimiter: "," | "\
       q(t.notes || ""),
       q((t.tags || []).join(" ")),
       fmtInr(t.amountPaise),
-      t.amountPaise.toString()
+      t.amountPaise.toString(),
+      q(t.tripExpenseId || "")
     ].join(d));
   }
 

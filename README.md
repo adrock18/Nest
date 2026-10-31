@@ -14,7 +14,20 @@
   savings-rate cards use semantic number colors. Spending and budget panels
   follow, then all-date account balances, in both dark and light mode.
 - **Quick appearance control**: The header sun/moon button switches theme and
-  retains your preference; the sidebar footer is reserved for storage status.
+  retains your preference; Settings and storage status stay at the sidebar bottom.
+- **Connected spending dashboards**: Food & Dining, Subscriptions, Transport &
+  Fuel, Home & Utilities, Personal Care & Wellness, and Shopping each have
+  monthly summaries, relevant breakdowns, category plans, and prefilled entry.
+  Travel meals, journeys, stays, and shopping appear in their category views
+  using **your share**, not the group bill. Open the original trip from any row.
+- **No duplicated payments**: Optionally link a trip expense to an existing
+  account entry. The personal dashboard counts its trip share once; the account
+  ledger and cash-flow totals remain unchanged. Tags supply context, not
+  classification. Deleting a trip/source removes the link, not the account payment.
+- **Consistent budgets**: Category dashboards and Monthly Budgets use the same
+  account-ledger spending, including linked payments. Trip shares are not added
+  to household limits. Unbudgeted categories do not consume another category's
+  remaining allowance; trips retain their separate group budgets.
 - **Correct time scope**: The selected month controls income, spending, and
   transaction views. Account balances and Settings exports always include all
   recorded dates.

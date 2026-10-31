@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
   CATEGORIES: "nest_db_categories",
   TRIPS: "nest_db_trips",
   TRIP_EXPENSES: "nest_db_trip_expenses",
+  CONNECTED_CATEGORIES: "nest_db_connected_categories_v1",
 };
 
 const SEED_ACCOUNTS: Account[] = [
@@ -216,6 +217,27 @@ function setStored<T>(key: string, val: T): void {
   }
 }
 
+function setStoredTogether(changes: { key: string; value: unknown }[]): void {
+  const originals = changes.map(({ key }) => ({ key, raw: localStorage.getItem(key) }));
+  let written = 0;
+  try {
+    for (const { key, value } of changes) {
+      setStored(key, value);
+      written++;
+    }
+  } catch (error) {
+    try {
+      for (const { key, raw } of originals.slice(0, written).reverse()) {
+        if (raw === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, raw);
+      }
+    } catch (rollbackError) {
+      throw new Error(`Save failed and browser storage could not be restored. Reload and check your data: ${String(error)}; ${String(rollbackError)}`);
+    }
+    throw error;
+  }
+}
+
 async function validateTransaction(transaction: Transaction): Promise<void> {
   if (!Number.isSafeInteger(transaction.amountPaise) || transaction.amountPaise <= 0) {
     throw new Error("Amount must be a positive whole-paise value within the supported limit.");
@@ -226,6 +248,16 @@ async function validateTransaction(transaction: Transaction): Promise<void> {
   const categories = await api.getCategories();
   if (!categories.some((c) => c.name === transaction.category && c.isIncome === (transaction.type === "income"))) {
     throw new Error("Choose a category matching the transaction flow.");
+  }
+  if (transaction.tripExpenseId) {
+    const expenses = await api.getTripExpenses();
+    const trips = await api.getTrips();
+    if (transaction.type !== "expense" || !expenses.some((expense) => expense.id === transaction.tripExpenseId && trips.some((trip) => trip.id === expense.tripId))) {
+      throw new Error("Choose an existing travel expense for the source link.");
+    }
+    if ((await api.getTransactions()).some((tx) => tx.id !== transaction.id && tx.tripExpenseId === transaction.tripExpenseId)) {
+      throw new Error("This travel expense is already linked to another ledger entry.");
+    }
   }
 }
 
@@ -261,6 +293,7 @@ export const api = {
       return await invoke<Transaction>("create_transaction", { transaction });
     }
     const current = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    if (current.some((tx) => tx.id === transaction.id)) throw new Error("Transaction ID already exists.");
     const updated = [transaction, ...current];
     setStored(STORAGE_KEYS.TRANSACTIONS, updated);
     return transaction;
@@ -352,7 +385,7 @@ export const api = {
       return await invoke<Category[]>("get_categories");
     }
     // Fallback: derive from seeded categories
-    return getStored<Category[]>(STORAGE_KEYS.CATEGORIES, [
+    const stored = getStored<Category[]>(STORAGE_KEYS.CATEGORIES, [
       { id: "cat-rent", name: "Rent", color: "#0ea5e9", isIncome: false },
       { id: "cat-groceries", name: "Groceries", color: "#10b981", isIncome: false },
       { id: "cat-dining", name: "Dining Out", color: "#f59e0b", isIncome: false },
@@ -365,6 +398,16 @@ export const api = {
       { id: "cat-other", name: "Other", color: "#94a3b8", isIncome: false },
       { id: "cat-general", name: "General Spending", color: "#64748b", isIncome: false },
     ]);
+    const additions: Category[] = [
+      { id: "cat-transport", name: "Transport", color: "#60a5fa", isIncome: false },
+      { id: "cat-home", name: "Home", color: "#2dd4bf", isIncome: false },
+      { id: "cat-personal-care", name: "Personal Care", color: "#f472b6", isIncome: false },
+      { id: "cat-shopping", name: "Shopping", color: "#fb923c", isIncome: false }
+    ];
+    if (getStored(STORAGE_KEYS.CONNECTED_CATEGORIES, false)) return stored;
+    const migrated = [...stored, ...additions.filter((category) => !stored.some((existing) => existing.name === category.name || existing.id === category.id))];
+    setStoredTogether([{ key: STORAGE_KEYS.CATEGORIES, value: migrated }, { key: STORAGE_KEYS.CONNECTED_CATEGORIES, value: true }]);
+    return migrated;
   },
 
   async createCategory(category: Category): Promise<Category> {
@@ -437,12 +480,16 @@ export const api = {
       return await invoke<boolean>("delete_trip", { id });
     }
     const current = getStored<Trip[]>(STORAGE_KEYS.TRIPS, SEED_TRIPS);
+    if (!current.some((trip) => trip.id === id)) return false;
     const updated = current.filter((t) => t.id !== id);
-    setStored(STORAGE_KEYS.TRIPS, updated);
-
-    // Also delete associated expenses
     const expenses = getStored<TripExpense[]>(STORAGE_KEYS.TRIP_EXPENSES, SEED_TRIP_EXPENSES);
-    setStored(STORAGE_KEYS.TRIP_EXPENSES, expenses.filter((e) => e.tripId !== id));
+    const deletedIds = new Set(expenses.filter((expense) => expense.tripId === id).map((expense) => expense.id));
+    const transactions = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    setStoredTogether([
+      { key: STORAGE_KEYS.TRIPS, value: updated },
+      { key: STORAGE_KEYS.TRIP_EXPENSES, value: expenses.filter((e) => e.tripId !== id) },
+      { key: STORAGE_KEYS.TRANSACTIONS, value: transactions.map((tx) => tx.tripExpenseId && deletedIds.has(tx.tripExpenseId) ? { ...tx, tripExpenseId: null } : tx) }
+    ]);
     return true;
   },
 
@@ -472,8 +519,13 @@ export const api = {
       return await invoke<boolean>("delete_trip_expense", { id });
     }
     const current = getStored<TripExpense[]>(STORAGE_KEYS.TRIP_EXPENSES, SEED_TRIP_EXPENSES);
+    if (!current.some((expense) => expense.id === id)) return false;
     const updated = current.filter((e) => e.id !== id);
-    setStored(STORAGE_KEYS.TRIP_EXPENSES, updated);
+    const transactions = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    setStoredTogether([
+      { key: STORAGE_KEYS.TRIP_EXPENSES, value: updated },
+      { key: STORAGE_KEYS.TRANSACTIONS, value: transactions.map((tx) => tx.tripExpenseId === id ? { ...tx, tripExpenseId: null } : tx) }
+    ]);
     return true;
   }
 };

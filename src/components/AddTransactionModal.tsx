@@ -13,6 +13,9 @@ interface AddTransactionModalProps {
   onAddTransaction: (transaction: Omit<Transaction, "id">) => Promise<void>;
   onEditTransaction?: (transaction: Transaction) => Promise<void>;
   editingTransaction?: Transaction | null;
+  initialCategory?: string;
+  initialRecurring?: boolean;
+  initialDate?: string;
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
@@ -22,7 +25,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   categories,
   onAddTransaction,
   onEditTransaction,
-  editingTransaction
+  editingTransaction,
+  initialCategory,
+  initialRecurring,
+  initialDate
 }) => {
   const isEditing = !!editingTransaction;
 
@@ -36,6 +42,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [isRecurring, setIsRecurring] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [tripExpenseId, setTripExpenseId] = useState<string | null>(editingTransaction?.tripExpenseId || null);
 
   // Populate form when editing
   useEffect(() => {
@@ -48,18 +55,20 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setNotes(editingTransaction.notes);
       setTagsInput(editingTransaction.tags.join(", "));
       setIsRecurring(editingTransaction.isRecurring);
+      setTripExpenseId(editingTransaction.tripExpenseId || null);
     } else {
       setType("expense");
       setAmountInput("");
       setAccountId((accounts && accounts[0]?.id) || "acc-primary");
-      setCategory(categories.find((c) => !c.isIncome)?.name || "");
-      setDate(getLocalDate());
+      setCategory(initialCategory || categories.find((c) => !c.isIncome)?.name || "");
+      setDate(initialDate || getLocalDate());
       setNotes("");
       setTagsInput("");
-      setIsRecurring(false);
+      setIsRecurring(initialRecurring || false);
+      setTripExpenseId(null);
     }
     setErrorMessage("");
-  }, [editingTransaction, accounts, categories]);
+  }, [editingTransaction, accounts, categories, initialCategory, initialRecurring, initialDate]);
 
   useEffect(() => {
     if (accounts && accounts.length > 0 && !accounts.some((a) => a.id === accountId)) {
@@ -100,7 +109,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           notes: notes.trim() || (type === "income" ? "Income deposit" : "General spending"),
           tags: parsedTags,
           isRecurring,
-          amountPaise: paise
+          amountPaise: paise,
+          tripExpenseId
         });
       } else {
         await onAddTransaction({
@@ -197,6 +207,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
               onClick={() => {
                 setType("income");
+                setTripExpenseId(null);
                 setCategory(incomeCategories[0]?.name || "");
               }}
             >
@@ -205,6 +216,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           </div>
 
           {/* Amount in Rupees */}
+          {tripExpenseId && <div className="spending-scope-note">
+            This account entry is linked to a trip expense. Category dashboards count the trip share, not this account payment.
+            <button type="button" className="text-button" onClick={() => setTripExpenseId(null)}>Remove travel link</button>
+          </div>}
           <div>
             <label style={{ display: "block", fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px" }}>
               AMOUNT (₹)

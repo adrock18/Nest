@@ -20,6 +20,7 @@ export interface Transaction {
   tags: string[]; // Multi-dimensional tags (e.g. ['#Work', '#TaxDeductible'])
   isRecurring: boolean; // Recurring bill or subscription marker
   amountPaise: number; // Stored strictly as positive integer paise (₹10.50 -> 1050)
+  tripExpenseId?: string | null;
 }
 
 export interface Category {

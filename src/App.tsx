@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import "./styles/theme.css";
+import "./styles/workspaces.css";
 import { Sidebar, NavTab } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { DashboardView } from "./views/DashboardView";
@@ -21,6 +22,8 @@ import { api } from "./services/api";
 import { calculateMonthlySummary, calculateAccountBalances } from "./utils/finance";
 import { getLocalDate } from "./utils/dates";
 import { addPaise } from "./utils/money";
+import { SpendingWorkspaceView } from "./views/SpendingWorkspaceView";
+import { SPENDING_WORKSPACES, buildSpendingEntries, summarizeSpending } from "./utils/workspaces";
 
 function getCurrentYM(): string {
   const now = new Date();
@@ -29,6 +32,7 @@ function getCurrentYM(): string {
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
+  const activeWorkspace = SPENDING_WORKSPACES.find((workspace) => workspace.id === activeTab);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -44,6 +48,8 @@ export const App: React.FC = () => {
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentYM);
+  const [expenseDefaults, setExpenseDefaults] = useState<{ category: string; recurring: boolean; date: string } | null>(null);
+  const [tripFocus, setTripFocus] = useState<{ tripId: string; expenseId?: string } | null>(null);
 
   // Theme State
   const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -147,6 +153,21 @@ export const App: React.FC = () => {
 
   // Dynamic Account Balances
   const accountBalances = useMemo(() => calculateAccountBalances(accounts, allTransactions), [accounts, allTransactions]);
+  const workspaceSummaries = useMemo(() => SPENDING_WORKSPACES.map((workspace) => ({
+    ...workspace, ...summarizeSpending(buildSpendingEntries(workspace.id, selectedMonth, allTransactions, trips, tripExpenses, accounts))
+  })), [selectedMonth, allTransactions, trips, tripExpenses, accounts]);
+
+  function openWorkspaceExpense(category: string, recurring: boolean) {
+    const today = getLocalDate();
+    setExpenseDefaults({ category, recurring, date: today.startsWith(selectedMonth) ? today : `${selectedMonth}-01` });
+    setEditingTransaction(null);
+    setIsAddModalOpen(true);
+  }
+
+  function openTrip(tripId: string, expenseId?: string) {
+    setTripFocus({ tripId, expenseId });
+    setActiveTab("travel");
+  }
 
   // Dynamic Category Spending Breakdown
   const categoryBreakdown = useMemo(() => {
@@ -279,6 +300,7 @@ export const App: React.FC = () => {
       setTrips((prev) => [created, ...prev]);
     } catch (err) {
       console.error("Failed to create trip:", err);
+      throw err;
     }
   };
 
@@ -288,16 +310,20 @@ export const App: React.FC = () => {
       setTrips((prev) => prev.map((t) => (t.id === updatedTrip.id ? updatedTrip : t)));
     } catch (err) {
       console.error("Failed to update trip:", err);
+      throw err;
     }
   };
 
   const handleDeleteTrip = async (id: string) => {
     try {
-      await api.deleteTrip(id);
+      if (!await api.deleteTrip(id)) throw new Error("Trip no longer exists.");
+      const deletedIds = new Set(tripExpenses.filter((e) => e.tripId === id).map((e) => e.id));
+      setTransactions((prev) => prev.map((tx) => tx.tripExpenseId && deletedIds.has(tx.tripExpenseId) ? { ...tx, tripExpenseId: null } : tx));
       setTrips((prev) => prev.filter((t) => t.id !== id));
       setTripExpenses((prev) => prev.filter((e) => e.tripId !== id));
     } catch (err) {
       console.error("Failed to delete trip:", err);
+      setActionError(`Could not delete trip: ${String(err)}`);
     }
   };
 
@@ -311,15 +337,18 @@ export const App: React.FC = () => {
       setTripExpenses((prev) => [created, ...prev]);
     } catch (err) {
       console.error("Failed to create trip expense:", err);
+      throw err;
     }
   };
 
   const handleDeleteTripExpense = async (id: string) => {
     try {
-      await api.deleteTripExpense(id);
+      if (!await api.deleteTripExpense(id)) throw new Error("Travel expense no longer exists.");
+      setTransactions((prev) => prev.map((tx) => tx.tripExpenseId === id ? { ...tx, tripExpenseId: null } : tx));
       setTripExpenses((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
       console.error("Failed to delete trip expense:", err);
+      setActionError(`Could not delete travel expense: ${String(err)}`);
     }
   };
 
@@ -392,6 +421,8 @@ export const App: React.FC = () => {
             onOpenAddTransaction={() => { setEditingTransaction(null); setIsAddModalOpen(true); }}
             onNavigateToBudgets={() => setActiveTab("budgets")}
             onNavigateToTransactions={() => setActiveTab("transactions")}
+            workspaceSummaries={workspaceSummaries}
+            onNavigateToWorkspace={(workspaceId) => setActiveTab(workspaceId)}
           />
         )}
 
@@ -402,6 +433,11 @@ export const App: React.FC = () => {
             onDeleteTransaction={handleDeleteTransaction}
             onOpenAddTransaction={() => { setEditingTransaction(null); setIsAddModalOpen(true); }}
             onEditTransaction={handleOpenEditTransaction}
+            onOpenTravelSource={(expenseId) => {
+              const expense = tripExpenses.find((item) => item.id === expenseId);
+              if (expense) openTrip(expense.tripId, expense.id);
+              else setActionError("This travel source no longer exists. Edit the transaction to remove its link.");
+            }}
           />
         )}
 
@@ -425,9 +461,22 @@ export const App: React.FC = () => {
             onDeleteTrip={handleDeleteTrip}
             onAddExpense={handleAddTripExpense}
             onDeleteExpense={handleDeleteTripExpense}
+            focusTrip={tripFocus}
+            onNavigateToWorkspace={(workspaceId, month) => {
+              if (month) setSelectedMonth(month);
+              setActiveTab(workspaceId);
+            }}
           />
         )}
 
+        {activeWorkspace && (
+          <SpendingWorkspaceView key={`${activeTab}:${selectedMonth}`}
+            workspaceId={activeWorkspace.id} month={selectedMonth} transactions={allTransactions}
+            accounts={accounts} budgets={budgets} trips={trips} tripExpenses={tripExpenses}
+            onAddExpense={openWorkspaceExpense} onEditTransaction={handleOpenEditTransaction}
+            onUpdateTransaction={handleEditTransaction} onOpenTrip={openTrip}
+            onManageBudgets={() => setActiveTab("budgets")} />
+        )}
         {activeTab === "settings" && (
           <SettingsView
             transactions={allTransactions}
@@ -447,12 +496,15 @@ export const App: React.FC = () => {
       {/* Transaction Modal (Add / Edit) */}
       {isAddModalOpen && <AddTransactionModal
         isOpen={isAddModalOpen}
-        onClose={() => { setIsAddModalOpen(false); setEditingTransaction(null); }}
+        onClose={() => { setIsAddModalOpen(false); setEditingTransaction(null); setExpenseDefaults(null); }}
         accounts={accounts}
         categories={categories}
         onAddTransaction={handleAddTransaction}
         onEditTransaction={handleEditTransaction}
         editingTransaction={editingTransaction}
+        initialCategory={expenseDefaults?.category}
+        initialRecurring={expenseDefaults?.recurring}
+        initialDate={expenseDefaults?.date}
       />}
 
       {/* Account Modal (Add / Edit) */}

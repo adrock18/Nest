@@ -12,14 +12,15 @@ import {
   Plus
 } from "lucide-react";
 import { Trip } from "../types";
-import { parseRupeesToPaise } from "../utils/money";
+import { parseRupeesToPaise, formatPaiseToDecimal } from "../utils/money";
+import { getLocalDate, isValidStrictCalendarDate } from "../utils/dates";
 
 interface AddTripModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddTrip: (trip: Omit<Trip, "id" | "createdAt">) => void;
+  onAddTrip: (trip: Omit<Trip, "id" | "createdAt">) => Promise<void>;
   initialTrip?: Trip | null;
-  onUpdateTrip?: (trip: Trip) => void;
+  onUpdateTrip?: (trip: Trip) => Promise<void>;
 }
 
 const COLOR_OPTIONS = [
@@ -53,10 +54,10 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
   onUpdateTrip
 }) => {
   const isEditMode = Boolean(initialTrip);
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = getLocalDate();
   const nextWeek = new Date();
   nextWeek.setDate(nextWeek.getDate() + 6);
-  const nextWeekStr = nextWeek.toISOString().split("T")[0];
+  const nextWeekStr = getLocalDate(nextWeek);
 
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
@@ -66,6 +67,8 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
   const [membersInput, setMembersInput] = useState("Me, Aarav, Pooja, Vikram");
   const [coverColor, setCoverColor] = useState("#06b6d4");
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const close = () => { if (!isSaving) onClose(); };
 
   useEffect(() => {
     if (isOpen) {
@@ -74,7 +77,7 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
         setDestination(initialTrip.destination);
         setStartDate(initialTrip.startDate);
         setEndDate(initialTrip.endDate);
-        setBudgetString(initialTrip.budgetPaise > 0 ? (initialTrip.budgetPaise / 100).toString() : "");
+        setBudgetString(initialTrip.budgetPaise > 0 ? formatPaiseToDecimal(initialTrip.budgetPaise) : "");
         setMembersInput(initialTrip.members.join(", "));
         setCoverColor(initialTrip.coverColor || "#06b6d4");
       } else {
@@ -121,8 +124,9 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     setError(null);
 
     if (!name.trim()) {
@@ -133,8 +137,8 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
       setError("Please specify a destination.");
       return;
     }
-    if (!startDate || !endDate) {
-      setError("Please select both start and end dates.");
+    if (!isValidStrictCalendarDate(startDate) || !isValidStrictCalendarDate(endDate)) {
+      setError("Please select valid start and end dates.");
       return;
     }
     if (endDate < startDate) {
@@ -153,34 +157,38 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
       }
     }
 
-    if (initialTrip && onUpdateTrip) {
-      onUpdateTrip({
-        ...initialTrip,
-        name: name.trim(),
-        destination: destination.trim(),
-        startDate,
-        endDate,
-        budgetPaise,
-        members: displayMembers,
-        coverColor
-      });
-    } else {
-      onAddTrip({
-        name: name.trim(),
-        destination: destination.trim(),
-        startDate,
-        endDate,
-        budgetPaise,
-        members: displayMembers,
-        coverColor
-      });
-    }
-
-    onClose();
+    setIsSaving(true);
+    try {
+      if (initialTrip && onUpdateTrip) {
+        await onUpdateTrip({
+          ...initialTrip,
+          name: name.trim(),
+          destination: destination.trim(),
+          startDate,
+          endDate,
+          budgetPaise,
+          members: displayMembers,
+          coverColor
+        });
+      } else {
+        await onAddTrip({
+          name: name.trim(),
+          destination: destination.trim(),
+          startDate,
+          endDate,
+          budgetPaise,
+          members: displayMembers,
+          coverColor
+        });
+      }
+      onClose();
+    } catch (err) {
+      setError(`Could not save trip: ${String(err)}`);
+    } finally { setIsSaving(false); }
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={close}>
       <div 
         className="modal-container"
         style={{
@@ -220,7 +228,7 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
           <button 
             type="button"
             className="btn-close"
-            onClick={onClose} 
+            onClick={close}
             title="Close dialog"
             aria-label="Close dialog"
           >
@@ -524,13 +532,15 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
             <button 
               type="button" 
               className="btn-secondary" 
-              onClick={onClose}
+              onClick={close}
+              disabled={isSaving}
               style={{ padding: "8px 16px", fontSize: "13px" }}
             >
               Cancel
             </button>
             <button 
               type="submit" 
+              disabled={isSaving}
               className="btn-primary"
               style={{
                 padding: "8px 20px",
@@ -550,7 +560,7 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
               }}
             >
               {isEditMode ? <Check size={15} /> : <Plus size={15} />}
-              <span>{isEditMode ? "Save Changes" : "Create Trip"}</span>
+              <span>{isSaving ? "Saving..." : isEditMode ? "Save Changes" : "Create Trip"}</span>
             </button>
           </div>
         </form>

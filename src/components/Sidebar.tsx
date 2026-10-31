@@ -5,11 +5,12 @@ import {
   Target, 
   Compass,
   Settings, 
-  Wallet
+  Wallet, UtensilsCrossed, Repeat, Car, House, Sparkles, ShoppingBag
 } from "lucide-react";
 import { isTauriDesktop } from "../services/api";
+import { SPENDING_WORKSPACES, type WorkspaceId } from "../utils/workspaces";
 
-export type NavTab = "dashboard" | "transactions" | "budgets" | "travel" | "settings";
+export type NavTab = "dashboard" | "transactions" | "budgets" | "travel" | "settings" | WorkspaceId;
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -52,6 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       elementId: "nav-tab-settings"
     }
   ];
+  const workspaceIcons = { food: UtensilsCrossed, subscriptions: Repeat, transport: Car, home: House, care: Sparkles, shopping: ShoppingBag };
 
   return (
     <aside className="app-sidebar" aria-label="Main Navigation">
@@ -72,6 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <nav className="sidebar-nav">
         <div className="nav-section-title">Workspace</div>
         {navItems.map((item) => {
+          if (item.id === "settings") return null;
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           const shortcutKey = item.id === "dashboard" ? "D" : item.id === "transactions" ? "T" : item.id === "budgets" ? "B" : item.id === "travel" ? "R" : "S";
@@ -90,10 +93,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           );
         })}
+        <div className="nav-section-title">Spending workspaces</div>
+        {SPENDING_WORKSPACES.map((workspace) => {
+          const Icon = workspaceIcons[workspace.id];
+          return <button key={workspace.id} id={`nav-tab-${workspace.id}`} className={`nav-button ${activeTab === workspace.id ? "active" : ""}`}
+            aria-current={activeTab === workspace.id ? "page" : undefined} title={workspace.title} onClick={() => onSelectTab(workspace.id)}>
+            <Icon size={16} className="nav-icon" /><span className="nav-label">{workspace.title}</span>
+          </button>;
+        })}
       </nav>
 
       {/* Local-first status */}
       <div className="sidebar-footer">
+        <button id="nav-tab-settings" className={`nav-button ${activeTab === "settings" ? "active" : ""}`}
+          aria-current={activeTab === "settings" ? "page" : undefined} title="Settings & backups" onClick={() => onSelectTab("settings")}>
+          <Settings size={16} /><span className="nav-label">Settings & backups</span>
+        </button>
         {/* Local-First Indicator */}
         <div className="status-badge" title={isTauriDesktop() ? "Data is stored in your local SQLite database" : "Browser preview uses localStorage, not the desktop database"}>
           <div className="status-indicator-dot" />

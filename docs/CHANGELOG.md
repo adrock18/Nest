@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Six connected monthly spending dashboards: Food & Dining, Subscriptions,
+  Transport & Fuel, Home & Utilities, Personal Care & Wellness, and Shopping.
+  Category-prefilled recording, merchant/category breakdowns, household plans,
+  source/tag search, related trips, and bidirectional source navigation.
+- Optional unique account-entry links to travel expenses (SQLite migration 005).
+  Personal dashboards count the original trip share once, without changing
+  account cash flow. Source references are included in CSV/JSON exports.
+- Projection, partial-budget, cross-month source, migration, uniqueness,
+  deletion, and browser-storage rollback regression coverage.
 - Compact dark/light V1 dashboard with a neutral monthly summary, spending
   distribution ring, budget check-ins, and individual account cards.
 - Account-name transaction search, date/amount sorting, useful empty states, and
@@ -18,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invalid dates, account references, credit balances, and backup verification.
 
 ### Fixed
+- Trip/source deletion clears ledger references and preserves account payments.
+  Native trip deletion is atomic; preview multi-collection errors are surfaced
+  and writes are rolled back when browser storage permits.
+- Travel save forms await persistence, retain input on errors, and validate
+  calendar dates. Trip budget editing preserves exact paise.
 - Account balances and Settings exports now use the complete ledger, while
   dashboard cash flow, category spending, and transactions use the selected month.
 - Positive credit-card opening amounts represent debt; purchases increase dues,
@@ -52,7 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expenses and is not deducted again.
 - Budget limits remain recurring monthly templates shared across months;
   month-specific allocations are not introduced by this update.
-- Existing Travel functionality is preserved, not expanded.
+- Existing Travel trip-wide budgets and splits are preserved; category views
+  project personal shares rather than cloning trips or generating account payments.
 
 ### Planned (0.1.0)
 - Tauri 2 + React + Vite + TypeScript application shell.

@@ -347,6 +347,11 @@ pub fn init_database(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
     }
 
+    if version < 5 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(include_str!("../migrations/005_connected_spending.sql"))?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -371,8 +376,8 @@ pub fn fetch_accounts(conn: &Connection) -> Result<Vec<Account>> {
 
 pub fn fetch_transactions(conn: &Connection, month_prefix: Option<&str>) -> Result<Vec<Transaction>> {
     let query = match month_prefix {
-        Some(_) => "SELECT id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise FROM transactions WHERE date LIKE ?1 ORDER BY date DESC, id DESC",
-        None => "SELECT id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise FROM transactions ORDER BY date DESC, id DESC",
+        Some(_) => "SELECT id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise, trip_expense_id FROM transactions WHERE date LIKE ?1 ORDER BY date DESC, id DESC",
+        None => "SELECT id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise, trip_expense_id FROM transactions ORDER BY date DESC, id DESC",
     };
 
     let mut stmt = conn.prepare(query)?;
@@ -405,6 +410,7 @@ fn parse_transaction_row(row: &rusqlite::Row) -> Result<Transaction> {
         tags,
         is_recurring: is_recurring_num != 0,
         amount_paise: row.get(8)?,
+        trip_expense_id: row.get(9)?,
     })
 }
 
@@ -412,8 +418,8 @@ pub fn insert_transaction(conn: &Connection, tx: &Transaction) -> Result<()> {
     validate_transaction(conn, tx)?;
     let tags_json = serde_json::to_string(&tx.tags).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
-        "INSERT INTO transactions (id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO transactions (id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise, trip_expense_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             tx.id,
             tx.date,
@@ -423,7 +429,8 @@ pub fn insert_transaction(conn: &Connection, tx: &Transaction) -> Result<()> {
             tx.notes,
             tags_json,
             if tx.is_recurring { 1 } else { 0 },
-            tx.amount_paise
+            tx.amount_paise,
+            tx.trip_expense_id
         ],
     )?;
     Ok(())
@@ -438,7 +445,7 @@ pub fn update_transaction(conn: &Connection, tx: &Transaction) -> Result<bool> {
     validate_transaction(conn, tx)?;
     let tags_json = serde_json::to_string(&tx.tags).unwrap_or_else(|_| "[]".to_string());
     let affected = conn.execute(
-        "UPDATE transactions SET date = ?1, flow_type = ?2, account_id = ?3, category = ?4, notes = ?5, tags_json = ?6, is_recurring = ?7, amount_paise = ?8 WHERE id = ?9",
+        "UPDATE transactions SET date = ?1, flow_type = ?2, account_id = ?3, category = ?4, notes = ?5, tags_json = ?6, is_recurring = ?7, amount_paise = ?8, trip_expense_id = ?10 WHERE id = ?9",
         params![
             tx.date,
             tx.flow_type,
@@ -448,7 +455,8 @@ pub fn update_transaction(conn: &Connection, tx: &Transaction) -> Result<bool> {
             tags_json,
             if tx.is_recurring { 1 } else { 0 },
             tx.amount_paise,
-            tx.id
+            tx.id,
+            tx.trip_expense_id
         ],
     )?;
     Ok(affected > 0)
@@ -633,6 +641,15 @@ fn validate_transaction(conn: &Connection, tx: &Transaction) -> Result<()> {
     if !account_exists || !category_matches {
         return Err(invalid_input("Choose an existing account and a category matching the transaction flow."));
     }
+    if let Some(source) = &tx.trip_expense_id {
+        let source_valid: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM trip_expenses e JOIN trips t ON t.id = e.trip_id WHERE e.id = ?1)",
+            params![source], |row| row.get(0),
+        )?;
+        if tx.flow_type != "expense" || !source_valid {
+            return Err(invalid_input("A travel source link must reference an existing trip expense and an expense transaction."));
+        }
+    }
     Ok(())
 }
 
@@ -691,8 +708,10 @@ pub fn insert_trip(conn: &Connection, trip: &Trip) -> Result<()> {
 }
 
 pub fn remove_trip(conn: &Connection, id: &str) -> Result<bool> {
-    let _ = conn.execute("DELETE FROM trip_expenses WHERE trip_id = ?1", params![id]);
-    let affected = conn.execute("DELETE FROM trips WHERE id = ?1", params![id])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM trip_expenses WHERE trip_id = ?1", params![id])?;
+    let affected = tx.execute("DELETE FROM trips WHERE id = ?1", params![id])?;
+    tx.commit()?;
     Ok(affected > 0)
 }
 
@@ -807,7 +826,7 @@ mod tests {
         let mut conn = setup_test_db();
         
         let version: i32 = conn.query_row("PRAGMA user_version;", [], |row| row.get(0)).unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         // Verify seeded accounts (V1: Unified Primary Amount)
         let accounts = fetch_accounts(&conn).unwrap();
@@ -841,6 +860,7 @@ mod tests {
             tags: vec!["#Consulting".to_string(), "#October".to_string()],
             is_recurring: true,
             amount_paise: 15000000, // ₹1,50,000.00
+            trip_expense_id: None,
         };
 
         let tx2 = Transaction {
@@ -853,6 +873,7 @@ mod tests {
             tags: vec!["#Food".to_string()],
             is_recurring: false,
             amount_paise: 245050, // ₹2,450.50
+            trip_expense_id: None,
         };
 
         insert_transaction(&conn, &tx1).unwrap();
@@ -900,6 +921,7 @@ mod tests {
             tags: vec!["' OR 1=1 --".to_string(), "\"; DELETE FROM categories; --".to_string()],
             is_recurring: false,
             amount_paise: 99900,
+            trip_expense_id: None,
         };
 
         insert_account(&conn, &Account {
@@ -941,6 +963,7 @@ mod tests {
             tags: vec!["#दैनिक".to_string(), "#🛒Market".to_string()],
             is_recurring: true,
             amount_paise: 100000000, // ₹10,00,000.00
+            trip_expense_id: None,
         };
 
         insert_transaction(&conn, &unicode_tx).unwrap();
@@ -959,6 +982,7 @@ mod tests {
             flow_type: "expense".into(), account_id: "acc-primary".into(),
             category: "Groceries".into(), notes: String::new(), tags: vec![],
             is_recurring: false, amount_paise: 1,
+            trip_expense_id: None,
         };
         for date in ["2026-02-29", "2100-02-29", "2026-04-31", "0000-01-01", "invalid"] {
             tx.date = date.into();
@@ -1001,6 +1025,7 @@ mod tests {
                 id: id.into(), date: "2026-10-01".into(), flow_type: flow.into(),
                 account_id: "acc-primary".into(), category: category.into(),
                 notes: String::new(), tags: vec![], is_recurring: false, amount_paise: amount,
+                trip_expense_id: None,
             }).unwrap();
         }
         assert_eq!(calculate_monthly_summary(&conn, "2026-10").unwrap().savings_rate_percentage, -50.0);
@@ -1015,6 +1040,7 @@ mod tests {
                 account_id: "acc-primary".into(), category: "Salary".into(),
                 notes: String::new(), tags: vec![], is_recurring: false,
                 amount_paise: MAX_SAFE_PAISE,
+                trip_expense_id: None,
             }).unwrap();
         }
         assert!(calculate_monthly_summary(&conn, "2026-10").is_err());
@@ -1035,6 +1061,7 @@ mod tests {
             tags: vec![],
             is_recurring: true,
             amount_paise: 10000000,
+            trip_expense_id: None,
         }).unwrap();
 
         // 2. Normal Outflow: ₹30,000.00 (3000000 paise)
@@ -1048,6 +1075,7 @@ mod tests {
             tags: vec![],
             is_recurring: true,
             amount_paise: 3000000,
+            trip_expense_id: None,
         }).unwrap();
 
         // 3. Recurring Outflow: ₹10,000.00 (1000000 paise)
@@ -1061,6 +1089,7 @@ mod tests {
             tags: vec![],
             is_recurring: true,
             amount_paise: 1000000,
+            trip_expense_id: None,
         }).unwrap();
 
         // 4. Non-recurring Outflow: ₹5,000.00 (500000 paise)
@@ -1074,6 +1103,7 @@ mod tests {
             tags: vec![],
             is_recurring: false,
             amount_paise: 500000,
+            trip_expense_id: None,
         }).unwrap();
 
         // Total Inflow: 10,000,000
@@ -1126,6 +1156,62 @@ mod tests {
     }
 
     #[test]
+    fn test_connected_sources_and_deletion() {
+        let conn = setup_test_db();
+        let sources = fetch_trip_expenses(&conn, None).unwrap();
+        let source = &sources[0];
+        let mut transaction = Transaction {
+            id: "linked-source".to_string(), date: "2026-10-01".to_string(),
+            flow_type: "expense".to_string(), account_id: "acc-primary".to_string(),
+            category: "Dining Out".to_string(), notes: "Account payment".to_string(),
+            tags: vec![], is_recurring: false, amount_paise: 10001,
+            trip_expense_id: Some(source.id.clone()),
+        };
+        insert_transaction(&conn, &transaction).unwrap();
+        assert_eq!(fetch_transactions(&conn, None).unwrap()[0].trip_expense_id, transaction.trip_expense_id);
+        transaction.id = "duplicate-link".to_string();
+        assert!(insert_transaction(&conn, &transaction).is_err());
+        transaction.trip_expense_id = Some("missing".to_string());
+        assert!(insert_transaction(&conn, &transaction).is_err());
+        transaction.trip_expense_id = Some(source.id.clone());
+        transaction.flow_type = "income".to_string();
+        transaction.category = "Salary".to_string();
+        assert!(insert_transaction(&conn, &transaction).is_err());
+        remove_trip_expense(&conn, &source.id).unwrap();
+        let mut persisted = fetch_transactions(&conn, None).unwrap().remove(0);
+        assert_eq!(persisted.trip_expense_id, None);
+        assert_eq!(persisted.amount_paise, 10001);
+        persisted.notes = "Still editable".to_string();
+        update_transaction(&conn, &persisted).unwrap();
+        let remaining = fetch_trip_expenses(&conn, Some(&source.trip_id)).unwrap();
+        persisted.trip_expense_id = Some(remaining[0].id.clone());
+        update_transaction(&conn, &persisted).unwrap();
+        remove_trip(&conn, &source.trip_id).unwrap();
+        assert_eq!(fetch_transactions(&conn, None).unwrap()[0].trip_expense_id, None);
+        assert!(fetch_trip_expenses(&conn, Some(&source.trip_id)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_connected_migration_preserves_existing_ledger() {
+        let mut conn = setup_test_db();
+        conn.execute_batch(
+            "DROP TRIGGER clear_deleted_trip_source;
+             DROP INDEX transactions_trip_expense_unique;
+             ALTER TABLE transactions DROP COLUMN trip_expense_id;
+             PRAGMA user_version = 4;
+             INSERT INTO transactions (id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise)
+             VALUES ('legacy', '2026-10-01', 'expense', 'acc-primary', 'Groceries', '', '[]', 0, 1250);"
+        ).unwrap();
+        init_database(&mut conn).unwrap();
+        let transactions = fetch_transactions(&conn, None).unwrap();
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].amount_paise, 1250);
+        assert_eq!(transactions[0].trip_expense_id, None);
+        init_database(&mut conn).unwrap();
+        assert_eq!(fetch_transactions(&conn, None).unwrap().len(), 1);
+    }
+
+    #[test]
     fn test_vacuum_backup_snapshot() {
         let conn = setup_test_db();
 
@@ -1140,6 +1226,7 @@ mod tests {
             tags: vec![],
             is_recurring: false,
             amount_paise: 5000000,
+            trip_expense_id: None,
         }).unwrap();
 
         let temp_dir = std::env::temp_dir();

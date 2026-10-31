@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   Plus, 
   MapPin, 
@@ -31,15 +31,18 @@ import {
 } from "../utils/travel";
 import { AddTripModal } from "../components/AddTripModal";
 import { AddTravelExpenseModal } from "../components/AddTravelExpenseModal";
+import { SPENDING_WORKSPACES, workspaceForTravelCategory, type WorkspaceId } from "../utils/workspaces";
 
 interface TravelViewProps {
   trips: Trip[];
   tripExpenses: TripExpense[];
-  onAddTrip: (trip: Omit<Trip, "id" | "createdAt">) => void;
-  onUpdateTrip: (trip: Trip) => void;
+  onAddTrip: (trip: Omit<Trip, "id" | "createdAt">) => Promise<void>;
+  onUpdateTrip: (trip: Trip) => Promise<void>;
   onDeleteTrip: (id: string) => void;
-  onAddExpense: (expense: Omit<TripExpense, "id">) => void;
+  onAddExpense: (expense: Omit<TripExpense, "id">) => Promise<void>;
   onDeleteExpense: (id: string) => void;
+  focusTrip: { tripId: string; expenseId?: string } | null;
+  onNavigateToWorkspace: (workspaceId: WorkspaceId, month?: string) => void;
 }
 
 type SubTab = "overview" | "daily" | "split" | "ledger";
@@ -51,7 +54,9 @@ export const TravelView: React.FC<TravelViewProps> = ({
   onUpdateTrip,
   onDeleteTrip,
   onAddExpense,
-  onDeleteExpense
+  onDeleteExpense,
+  focusTrip,
+  onNavigateToWorkspace
 }) => {
   // Each trip is collapsed initially as requested!
   const [expandedTripIds, setExpandedTripIds] = useState<Record<string, boolean>>({});
@@ -69,6 +74,16 @@ export const TravelView: React.FC<TravelViewProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [ledgerSearchQuery, setLedgerSearchQuery] = useState("");
   const [ledgerCategoryFilter, setLedgerCategoryFilter] = useState<string>("all");
+  useEffect(() => {
+    if (!focusTrip) return;
+    setSearchQuery("");
+    setLedgerSearchQuery("");
+    setLedgerCategoryFilter("all");
+    setExpandedTripIds((prev) => ({ ...prev, [focusTrip.tripId]: true }));
+    setTripSubTabs((prev) => ({ ...prev, [focusTrip.tripId]: focusTrip.expenseId ? "ledger" : "overview" }));
+    const frame = requestAnimationFrame(() => document.getElementById(`trip-card-${focusTrip.tripId}`)?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, [focusTrip]);
 
   const toggleTripExpand = (tripId: string) => {
     setExpandedTripIds((prev) => ({
@@ -207,6 +222,15 @@ export const TravelView: React.FC<TravelViewProps> = ({
           </div>
         </div>
 
+        <section className="panel-card travel-connections">
+          <div className="panel-header"><h2 className="panel-title">Travel spending, connected</h2><span className="panel-caption">Trip totals stay trip-wide</span></div>
+          <p className="panel-note">Your share of meals, transport, stays, and shopping also appears in its category dashboard by expense month. Nothing is copied into the account ledger.</p>
+          <div className="toolbar-actions">
+            {SPENDING_WORKSPACES.filter((workspace) => workspace.travelCategories.length > 0).map((workspace) =>
+              <button key={workspace.id} className="btn-secondary" onClick={() => onNavigateToWorkspace(workspace.id)}>{workspace.title}<ArrowRight size={14} /></button>)}
+          </div>
+        </section>
+
         {/* Right Actions */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {/* Quick Search */}
@@ -317,6 +341,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
             return (
               <div 
                 key={trip.id}
+                id={`trip-card-${trip.id}`}
                 style={{
                   background: "var(--bg-surface)",
                   border: isExpanded ? `1px solid ${themeColor}55` : "1px solid var(--border-medium)",
@@ -981,8 +1006,9 @@ export const TravelView: React.FC<TravelViewProps> = ({
                               <tbody>
                                 {ledgerExpenses.map((exp) => {
                                   const catMeta = TRAVEL_CATEGORIES[exp.category];
+                                  const workspaceId = workspaceForTravelCategory(exp.category);
                                   return (
-                                    <tr key={exp.id}>
+                                    <tr key={exp.id} className={focusTrip?.expenseId === exp.id ? "source-highlight" : undefined}>
                                       <td className="font-mono" style={{ fontSize: "12px" }}>{exp.date}</td>
                                       <td>
                                         <div style={{ fontWeight: 600, color: "var(--text-main)" }}>{exp.title}</div>
@@ -1005,6 +1031,9 @@ export const TravelView: React.FC<TravelViewProps> = ({
                                           {renderCategoryIcon(exp.category)}
                                           {catMeta.label}
                                         </span>
+                                        {workspaceId && <button className="text-button" onClick={() => onNavigateToWorkspace(workspaceId, exp.date.slice(0, 7))}>
+                                          Open {SPENDING_WORKSPACES.find((workspace) => workspace.id === workspaceId)!.title}
+                                        </button>}
                                       </td>
                                       <td style={{ fontSize: "12.5px" }}>{exp.paidBy}</td>
                                       <td style={{ fontSize: "12px", textTransform: "capitalize", color: "var(--text-secondary)" }}>

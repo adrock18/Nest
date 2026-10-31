@@ -164,6 +164,11 @@ This table tracks **every file and directory** currently in the workspace, what 
 | [`src-tauri/target/release/nest.exe`](src-tauri/target/release/nest.exe) | **Production Build** | Standalone Desktop Executable | Native Windows release binary compiled with Win32 GUI subsystem flags (launches immediately with no command prompt). |
 | [`src-tauri/target/release/bundle/nsis/Nest_0.1.0_x64-setup.exe`](src-tauri/target/release/bundle/nsis/Nest_0.1.0_x64-setup.exe) | **Official Installer** | Standalone NSIS Windows Installer (2.1 MB) | Windows setup installer wizard that installs Nest to Program Files, adds Start Menu entry, and registers desktop icon. |
 | [`run_nest.bat`](run_nest.bat) | **Newly Added** | Windows desktop one-click batch launcher | Sets user Cargo path and boots `npm run tauri dev` in an interactive desktop terminal for hot-reload dev. |
+| [`src/utils/workspaces.ts`](../src/utils/workspaces.ts) | **Newly Added** | Connected spending projections | Six category mappings, personal shares, explicit deduplication, and ledger-based budget summaries. |
+| [`src/views/SpendingWorkspaceView.tsx`](../src/views/SpendingWorkspaceView.tsx) | **Newly Added** | Six category dashboards | Configured breakdowns, category plans, source/tag filters, related trips, and link/unlink actions. |
+| [`src/styles/workspaces.css`](../src/styles/workspaces.css) | **Newly Added** | Scoped workspace design | Distinct accents, grouped navigation scrolling, and responsive dark/light layouts. |
+| [`src-tauri/migrations/005_connected_spending.sql`](../src-tauri/migrations/005_connected_spending.sql) | **Newly Added** | Additive schema migration | Nullable unique travel source reference, source-deletion cleanup trigger, and category additions. |
+| [`tests/workspaces.test.ts`](../tests/workspaces.test.ts) | **Newly Added** | Connected spending regressions | Projection, cross-month links, no heuristic deduplication, partial budgets, and exports. |
 
 ---
 
@@ -230,14 +235,14 @@ Whenever a new file or directory is introduced, we will:
 
 ## 8. Independent V1 Feature Workstreams
 
-The current iteration implements only the UI cleanup in layout A. The other
-workstreams below are separately scoped follow-ups, not completed features.
+Layout A cleanup and connected category spending dashboards are implemented.
+Ledger clarity and data-safety acceptance remain separate follow-ups.
 
 | Feature | Ownership | Acceptance / boundary |
 |---|---|---|
 | UI shell & compact overview | `src/components/Header.tsx`, `src/components/Sidebar.tsx`, `src/views/DashboardView.tsx`, shell/dashboard CSS | Neutral four-card monthly summary; green income, red expense, blue positive savings; spending + budgets next, accounts last; header sun/moon toggle; dark/light and minimum-window checks. Implemented. |
 | Income & expense ledger clarity | `src/views/TransactionsView.tsx`, transaction entry components, ledger-specific CSS | Explicit income/expense language, category/account filtering, visible filtered totals, clear entry/edit actions. Pending separate feature. |
-| Category spending workspaces | `src/views/BudgetsView.tsx`, category-specific components and CSS | Category budget, spent, remaining, related ledger entries, and category-prefilled Add expense. Reuse existing category, budget, and transaction records. Pending separate feature. |
+| Connected category spending workspaces | `src/views/SpendingWorkspaceView.tsx`, `src/utils/workspaces.ts`, `src/styles/workspaces.css` | Six dashboards, category plans, source/tag filters, prefilled entries, Travel links, and personal-share deduplication. Implemented; no automatic cash-flow writes. |
 | Accounts & data safety | `src/views/SettingsView.tsx`, account entry, native persistence and tests | Account UX, backup/restore drill and Windows installer acceptance. Pending separate feature. |
 
 ### Parallel implementation contract
@@ -250,9 +255,17 @@ workstreams below are separately scoped follow-ups, not completed features.
 - Monthly views use the selected month. Account balances and full-history
   exports remain all-date. All features preserve whole-paise money and local
   calendar validation.
-- Category workspaces use the household ledger rather than cloning Travel's
-  trips, companions, itemized splits, or settlement tables. Existing Travel is
-  unchanged. Specialist inventory, billing schedules, or forecasting are not
-  part of this UI cleanup.
+- Category workspaces project the household ledger and existing personal trip
+  shares rather than cloning trips, companions, itemized splits, or settlement
+  tables. Optional source links prevent duplicated personal-spending totals.
+  Monthly budgets continue to use account-ledger amounts. Specialist inventory,
+  billing schedules, or forecasting are not part of V1.
 - Layout A is selected for this iteration. Category-first layout B and
   ledger-first layout C remain review options, not simultaneous implementations.
+
+Validation: frontend build, 110 existing edge checks plus API/workspace
+regressions, 13 native SQLite tests, and Windows debug desktop build passed.
+Browser checks cover link/unlink persistence, source navigation/deletion,
+subscription defaults, selected-month entry dates, visible save errors/retry,
+and dark/light default/minimum-window layouts.
+Installer acceptance and a user-data restore drill remain outstanding.

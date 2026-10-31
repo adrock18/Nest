@@ -9,6 +9,7 @@ interface TransactionsViewProps {
   onDeleteTransaction: (id: string) => void;
   onOpenAddTransaction: () => void;
   onEditTransaction: (tx: Transaction) => void;
+  onOpenTravelSource: (expenseId: string) => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
@@ -16,7 +17,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   accounts,
   onDeleteTransaction,
   onOpenAddTransaction,
-  onEditTransaction
+  onEditTransaction,
+  onOpenTravelSource
 }) => {
   const [filterType, setFilterType] = useState<"all" | "expense" | "income" | "recurring">("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,7 +179,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                       )}
                     </div>
                   </td>
-                  <td style={{ color: "var(--text-secondary)" }}>{tx.notes}</td>
+                  <td style={{ color: "var(--text-secondary)" }}>{tx.notes}
+                    {tx.tripExpenseId && <button className="text-button" onClick={() => onOpenTravelSource(tx.tripExpenseId!)}>Linked travel expense</button>}
+                  </td>
                   <td style={{ textAlign: "right" }}>
                     <span className={`amount-mono ${tx.type === "income" ? "metric-value income" : "metric-value expense"}`} style={{ fontSize: "14px" }}>
                       {tx.type === "income" ? "+" : "-"}{formatPaiseToRupees(tx.amountPaise)}
