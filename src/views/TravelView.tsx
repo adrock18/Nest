@@ -15,8 +15,6 @@ import {
   Fuel, 
   ShoppingBag, 
   Ticket,
-  ChevronDown,
-  ChevronUp,
   Compass,
   ArrowRight,
   Pencil
@@ -64,9 +62,9 @@ export const TravelView: React.FC<TravelViewProps> = ({
   focusTrip,
   onNavigateToWorkspace
 }) => {
-  // Each trip is collapsed initially as requested!
-  const [expandedTripIds, setExpandedTripIds] = useState<Record<string, boolean>>({});
-  
+  // Master-detail: the single trip whose detail is shown in the panel.
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+
   // Active subtab per trip (defaults to "overview")
   const [tripSubTabs, setTripSubTabs] = useState<Record<string, SubTab>>({});
   
@@ -87,22 +85,15 @@ export const TravelView: React.FC<TravelViewProps> = ({
     setLedgerSearchQuery("");
     setLedgerCategoryFilter("all");
     setHighlightedExpenseId(expenseId);
-    setExpandedTripIds((prev) => ({ ...prev, [tripId]: true }));
+    setSelectedTripId(tripId);
     setTripSubTabs((prev) => ({ ...prev, [tripId]: expenseId ? "ledger" : "overview" }));
-    return requestAnimationFrame(() => document.getElementById(`trip-card-${tripId}`)?.scrollIntoView({ block: "start" }));
+    return requestAnimationFrame(() => document.getElementById(`trip-detail-panel`)?.scrollIntoView({ block: "nearest" }));
   }, []);
   useEffect(() => {
     if (!focusTrip) return;
     const frame = revealTrip(focusTrip.tripId, focusTrip.expenseId);
     return () => cancelAnimationFrame(frame);
   }, [focusTrip, revealTrip]);
-
-  const toggleTripExpand = (tripId: string) => {
-    setExpandedTripIds((prev) => ({
-      ...prev,
-      [tripId]: !prev[tripId]
-    }));
-  };
 
   const getSubTab = (tripId: string): SubTab => {
     return tripSubTabs[tripId] || "overview";
@@ -194,6 +185,20 @@ export const TravelView: React.FC<TravelViewProps> = ({
     );
   }, [trips, searchQuery]);
 
+  // Resolve the trip whose detail is shown: honour the explicit selection when it
+  // still exists in the filtered list, otherwise fall back to the first trip.
+  const selectedTrip = useMemo(() => {
+    if (filteredTrips.length === 0) return null;
+    return filteredTrips.find((t) => t.id === selectedTripId) || filteredTrips[0];
+  }, [filteredTrips, selectedTripId]);
+
+  // Keep component state in sync so the highlighted rail row matches the detail panel.
+  useEffect(() => {
+    if (selectedTrip && selectedTrip.id !== selectedTripId) {
+      setSelectedTripId(selectedTrip.id);
+    }
+  }, [selectedTrip, selectedTripId]);
+
   return (
     <div className="view-content-wrapper travel-workspace">
       {/* 1. Header Toolbar */}
@@ -273,11 +278,49 @@ export const TravelView: React.FC<TravelViewProps> = ({
             <span>Create Your First Trip</span>
           </button>
         </div>
-      ) : (
-        /* 3. Collapsible Accordion Trips List */
-        <div className="travel-trip-list">
-          {filteredTrips.map((trip) => {
-            const isExpanded = !!expandedTripIds[trip.id];
+      ) : filteredTrips.length === 0 ? null : (
+        /* 3. Master-Detail Trips Layout (sticky rail + single detail panel) */
+        <div className="travel-master-detail">
+          {/* MASTER: compact trip rail (sticky on wide) + chip bar (sticky on narrow) */}
+          <nav className="travel-trip-rail" aria-label="Your trips">
+            <div className="travel-rail-list">
+              {filteredTrips.map((trip) => {
+                const tripExpList = (tripExpenses || []).filter((e) => e.tripId === trip.id);
+                const summary = computeTravelSummary(trip, tripExpList, "Me");
+                const themeColor = trip.coverColor || "#06b6d4";
+                const isSelected = selectedTrip?.id === trip.id;
+                const budgetPct = Math.min(summary.budgetUsedPct, 100);
+                return (
+                  <button
+                    key={trip.id}
+                    type="button"
+                    className={`travel-rail-row${isSelected ? " is-selected" : ""}`}
+                    onClick={() => setSelectedTripId(trip.id)}
+                    aria-pressed={isSelected}
+                    style={{ borderLeft: `4px solid ${themeColor}` }}
+                  >
+                    <div className="travel-rail-row-main">
+                      <span className="travel-rail-name">{trip.name}</span>
+                      <span className="travel-rail-total font-mono">{formatPaiseToRupees(summary.totalSpentPaise)}</span>
+                    </div>
+                    <div className="travel-rail-dates">{formatTripDateRange(trip.startDate, trip.endDate)}</div>
+                    {trip.budgetPaise > 0 && (
+                      <div className="travel-rail-budget-track">
+                        <div
+                          className="travel-rail-budget-bar"
+                          style={{ width: `${budgetPct}%`, background: themeColor }}
+                        />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* DETAIL: the selected trip's hero KPIs + subtabs */}
+          {selectedTrip && (() => {
+            const trip = selectedTrip;
             const tripExpList = (tripExpenses || []).filter((e) => e.tripId === trip.id);
             const summary = computeTravelSummary(trip, tripExpList, "Me");
             const daysCount = calculateTripDays(trip.startDate, trip.endDate);
@@ -298,24 +341,20 @@ export const TravelView: React.FC<TravelViewProps> = ({
             });
 
             return (
-              <div 
-                key={trip.id}
-                id={`trip-card-${trip.id}`}
-                className="travel-trip-card"
+              <div
+                id="trip-detail-panel"
+                className="travel-trip-detail"
                 style={{
                   background: "var(--bg-surface)",
-                  border: isExpanded ? `1px solid ${themeColor}55` : "1px solid var(--border-medium)",
-                  boxShadow: isExpanded 
-                    ? "0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)" 
-                    : "0 2px 8px rgba(0, 0, 0, 0.2)"
+                  border: `1px solid ${themeColor}55`,
+                  borderRadius: "14px"
                 }}
               >
-                {/* Collapsed Header Bar (Always Visible, Clickable) */}
-                <div 
-                  onClick={() => toggleTripExpand(trip.id)}
-                  className="travel-trip-header"
+                {/* Detail Header Bar */}
+                <div
+                  className="travel-trip-header travel-detail-header"
                   style={{
-                    background: isExpanded ? "var(--bg-card)" : "var(--bg-surface)",
+                    background: "var(--bg-card)",
                     borderLeft: `5px solid ${themeColor}`
                   }}
                 >
@@ -356,7 +395,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: Total Spending, Actions & Expand Chevron */}
+                  {/* Right: Total Spending & Actions */}
                   <div className="travel-trip-header-right">
                     {/* Total Spending Metric Block */}
                     <div className="travel-trip-total">
@@ -407,20 +446,11 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     >
                       <Trash2 size={15} />
                     </button>
-
-                    {/* Expand/Collapse Chevron Indicator */}
-                    <div className="travel-trip-chevron" style={{
-                      background: isExpanded ? "var(--bg-surface-hover)" : "transparent",
-                      color: isExpanded ? "var(--text-main)" : "var(--text-muted)"
-                    }}>
-                      {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                    </div>
                   </div>
                 </div>
 
-                {/* Expanded Detailed Workspace for this Trip */}
-                {isExpanded && (
-                  <div className="travel-trip-body">
+                {/* Detailed Workspace for this Trip */}
+                <div className="travel-trip-body">
                     {/* 4 Hero KPI Cards */}
                     <div className="travel-kpi-grid">
                       {/* Card 1: Total Spent */}
@@ -866,11 +896,10 @@ export const TravelView: React.FC<TravelViewProps> = ({
                         )}
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
             );
-          })}
+          })()}
         </div>
       )}
 
