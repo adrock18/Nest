@@ -23,3 +23,7 @@ Read by Kiro, Codex, Copilot, Claude Code (via `CLAUDE.md`), and DeepMind Antigr
 4. **Git & Workflow**:
    - Commit changes cleanly with descriptive messages.
    - Ask before adding new external dependencies.
+5. **Scope Guard-Rails & Version Discipline**:
+   - **Active Version Guard**: Always check whether a proposed feature, architectural change, or database expansion goes beyond the current release scope (**Version 1.0**).
+   - **Remind & Alert the User**: If a request exceeds the active version boundary, proactively alert and remind the user before implementing.
+   - **Strict Version Boundaries**: Implement only features belonging to the active version. Store out-of-scope ideas, advanced sub-systems, and future enhancements in [`docs/IDEAS.md`](docs/IDEAS.md) categorized under their target version (e.g., Version 2.0+).

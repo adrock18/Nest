@@ -13,7 +13,7 @@
 Nest is built for daily, practical personal finance management without relying on third-party cloud servers or monthly software subscriptions:
 - **Your Data Stays on Your Machine**: All transactions, accounts, and budgets are stored in an embedded SQLite database on your local drive. It functions 100% offline.
 - **Precision First**: Money is stored as exact integer **paise** (₹10.50 = `1050`) to eliminate floating-point arithmetic errors.
-- **Laser-Focused V1 Scope**: We are building a dependable, complete **Version 1.0** first. All advanced ideas (AI assistant, receipt OCR, geospatial maps, family splitting) are safely parked in [`IDEAS.md`](IDEAS.md) and will be introduced only after Version 1 is live and actively used.
+- **Laser-Focused V1 Scope**: We are building a dependable, complete **Version 1.0** first. All advanced ideas (AI assistant, receipt OCR, geospatial maps, family splitting) are safely parked in [`IDEAS.md`](docs/IDEAS.md) and will be introduced only after Version 1 is live and actively used.
 
 ---
 
@@ -110,4 +110,4 @@ We will build Version 1.0 step-by-step together, testing and understanding each 
 
 ## 5. Post-V1 Backlog
 
-All advanced capabilities—including **Conversational AI Q&A ("Ask Your Budget")**, **Vision AI Receipt Scanner**, **Geospatial Spending Maps**, and **Family Multi-Account Splitting**—are documented in detail in [`IDEAS.md`](IDEAS.md). Once Version 1.0 is shipped, we will pull the next milestone directly from that backlog.
+All advanced capabilities—including **Conversational AI Q&A ("Ask Your Budget")**, **Vision AI Receipt Scanner**, **Geospatial Spending Maps**, and **Family Multi-Account Splitting**—are documented in detail in [`IDEAS.md`](docs/IDEAS.md). Once Version 1.0 is shipped, we will pull the next milestone directly from that backlog.
