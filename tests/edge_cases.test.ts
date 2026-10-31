@@ -4,8 +4,11 @@
  * Budget Ceilings, CSV/JSON Data Portability, and Realistic Ledger Stress Data.
  */
 
-import { parseRupeesToPaise, formatPaiseToRupees } from "../src/utils/money.ts";
-import { buildAnalysisSheet, generateFinancialAnalysis } from "../src/utils/export.ts";
+import { parseRupeesToPaise, formatPaiseToRupees, addPaise } from "../src/utils/money.ts";
+import { buildAnalysisSheet, generateFinancialAnalysis, exportTransactionsToCsv } from "../src/utils/export.ts";
+import { isValidStrictCalendarDate, getLocalDate } from "../src/utils/dates.ts";
+import { computeBudgetProgress, calculateAccountBalances, calculateCashPosition, calculateMonthlySummary } from "../src/utils/finance.ts";
+import type { Account, Transaction } from "../src/types/index.ts";
 
 // Test Runner Infrastructure
 let passed = 0;
@@ -62,6 +65,11 @@ assert(parseRupeesToPaise("   750.25   ") === 75025, "Surrounding whitespace '  
 // Sub-paise rounding
 assert(parseRupeesToPaise("10.004") === 1000, "Sub-paise down-rounding '10.004' -> 1000 paise");
 assert(parseRupeesToPaise("10.006") === 1001, "Sub-paise up-rounding '10.006' -> 1001 paise");
+assert(parseRupeesToPaise("1.005") === 101, "Decimal half-paisa rounds exactly without floating-point skew");
+assert(parseRupeesToPaise("90071992547409.91") === Number.MAX_SAFE_INTEGER, "Largest safe whole-paise input remains exact");
+assertThrows(() => parseRupeesToPaise("90071992547409.92"), "Reject amounts above safe integer precision");
+assertThrows(() => addPaise(Number.MAX_SAFE_INTEGER, 1), "Reject aggregate overflow instead of losing paise");
+assert(formatPaiseToRupees(Number.MAX_SAFE_INTEGER).endsWith(".91"), "Currency formatting preserves the last paisa at the supported maximum");
 
 // Large financial values (1 Crore = 10,000,000 INR = 1,000,000,000 paise)
 assert(parseRupeesToPaise("₹ 1,00,00,000.00") === 1000000000, "1 Crore INR -> 1 Billion paise");
@@ -99,27 +107,6 @@ assert(formattedNaN === "₹0.00", "Format NaN safely yields ₹0.00");
 // ----------------------------------------------------------------------
 console.log("\n[2/6] Testing Strict Calendar & Leap Year Rules...");
 
-function isValidStrictCalendarDate(dateStr: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
-  const [yearStr, monthStr, dayStr] = dateStr.split("-");
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-  const day = parseInt(dayStr, 10);
-
-  if (month < 1 || month > 12) return false;
-  if (day < 1 || day > 31) return false;
-
-  // Days in month validation
-  const daysInMonth = [
-    31,
-    // Leap year rule: divisible by 4 and (not divisible by 100 or divisible by 400)
-    (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 29 : 28,
-    31, 30, 31, 30, 31, 31, 30, 31, 30, 31
-  ];
-
-  return day <= daysInMonth[month - 1];
-}
-
 assert(isValidStrictCalendarDate("2024-02-29"), "2024 is a leap year (Feb 29 is valid)");
 assert(isValidStrictCalendarDate("2028-02-29"), "2028 is a leap year (Feb 29 is valid)");
 assert(isValidStrictCalendarDate("2000-02-29"), "2000 is a century leap year (Feb 29 is valid)");
@@ -129,6 +116,8 @@ assert(isValidStrictCalendarDate("2026-10-31"), "2026-10-31 is valid month end")
 assert(!isValidStrictCalendarDate("2026-04-31"), "April has only 30 days (April 31 is invalid)");
 assert(!isValidStrictCalendarDate("2026-13-01"), "Month 13 is invalid");
 assert(!isValidStrictCalendarDate("not-a-date"), "Arbitrary text is invalid date");
+assert(!isValidStrictCalendarDate("0000-01-01"), "Year zero is not a valid calendar year");
+assert(getLocalDate(new Date(2026, 9, 31, 0, 1)) === "2026-10-31", "Form defaults preserve the local calendar date near midnight");
 
 // ----------------------------------------------------------------------
 // 3. TAG SANITIZATION TESTS
@@ -157,22 +146,14 @@ assert(JSON.stringify(tags3) === JSON.stringify(["#Groceries", "#Food"]), "Multi
 // ----------------------------------------------------------------------
 console.log("\n[4/6] Testing Budget Ceilings, Thresholds & Zero Division...");
 
-function computeBudgetProgress(spentPaise: number, limitPaise: number) {
-  const pct = limitPaise > 0
-    ? Math.min(Math.round((spentPaise / limitPaise) * 100), 100)
-    : (spentPaise > 0 ? 100 : 0);
-  const isOver = spentPaise > limitPaise;
-  const isNear = pct >= 80 && !isOver;
-  return { pct, isOver, isNear };
-}
-
 // 0% spend
 const bZero = computeBudgetProgress(0, 1000000);
 assert(bZero.pct === 0 && !bZero.isOver && !bZero.isNear, "0% spend -> pct 0, not over, not near");
 
 // 79.9% spend (799,000 out of 1,000,000 paise)
 const b79 = computeBudgetProgress(799000, 1000000);
-assert(b79.pct === 80 && b79.isNear, "79.9% rounded is 80% (triggers near threshold)");
+assert(b79.pct === 79.9 && !b79.isNear, "79.9% does not prematurely trigger the 80% warning");
+assert(computeBudgetProgress(800000, 1000000).isNear, "Exactly 80% triggers the warning");
 
 // 50% spend
 const b50 = computeBudgetProgress(500000, 1000000);
@@ -180,11 +161,11 @@ assert(b50.pct === 50 && !b50.isOver && !b50.isNear, "50% spend -> pct 50, healt
 
 // Exactly 100% spend
 const b100 = computeBudgetProgress(1000000, 1000000);
-assert(b100.pct === 100 && !b100.isOver && b100.isNear, "100% spend -> exactly at limit, not over");
+assert(b100.pct === 100 && b100.isAtLimit && !b100.isNear, "100% spend -> limit reached, not merely approaching");
 
 // 150% overspend (1,500,000 out of 1,000,000)
 const bOver = computeBudgetProgress(1500000, 1000000);
-assert(bOver.pct === 100 && bOver.isOver && !bOver.isNear, "150% overspend -> pct clamped to 100, isOver true");
+assert(bOver.pct === 150 && bOver.isOver && !bOver.isNear, "150% overspend retains actual percentage for display");
 
 // Zero budget ceiling division by zero safety
 const bDivZero = computeBudgetProgress(0, 0);
@@ -196,94 +177,39 @@ assert(bDivZeroSpent.pct === 100 && bDivZeroSpent.isOver, "Zero limit with spend
 // ----------------------------------------------------------------------
 // 5. DASHBOARD SAFE-TO-SPEND & CASH RUNWAY MATH
 // ----------------------------------------------------------------------
-console.log("\n[5/6] Testing Safe-to-Spend, Cash Runway & Overdraft Protection...");
-
-function calculateSafeToSpend(
-  liquidCashPaise: number,
-  recurringCommitmentPaise: number,
-  remainingBudgetsPaise: number
-): number {
-  return Math.max(0, liquidCashPaise - recurringCommitmentPaise - remainingBudgetsPaise);
-}
-
-// Normal positive scenario:
-// Liquid cash: ₹1,50,000 (15,000,000 paise)
-// Recurring bills: ₹25,000 (2,500,000 paise)
-// Remaining budgets: ₹50,000 (5,000,000 paise)
-// Safe to spend = 15,000,000 - 2,500,000 - 5,000,000 = 7,500,000 paise (₹75,000)
-assert(
-  calculateSafeToSpend(15000000, 2500000, 5000000) === 7500000,
-  "Normal Safe-to-Spend yields positive remainder (₹75,000)"
-);
-
-// Deficit scenario:
-// Liquid cash: ₹20,000 (2,000,000 paise)
-// Recurring bills: ₹30,000 (3,000,000 paise)
-// Remaining budgets: ₹40,000 (4,000,000 paise)
-// Clamped to 0 (never negative)
-assert(
-  calculateSafeToSpend(2000000, 3000000, 4000000) === 0,
-  "Deficit Safe-to-Spend cleanly clamps to 0"
-);
-
-// Cash Runway calculation
-function calculateCashRunway(liquidCashPaise: number, totalOutflowPaise: number): string {
-  return totalOutflowPaise > 0
-    ? (liquidCashPaise / totalOutflowPaise).toFixed(1)
-    : "12+";
-}
-
-assert(calculateCashRunway(10000000, 0) === "12+", "Zero monthly outflow -> '12+' runway");
-assert(calculateCashRunway(10000000, 5000000) === "2.0", "Liquid cash double outflow -> 2.0 months");
-assert(calculateCashRunway(2500000, 5000000) === "0.5", "Low cash reserves -> 0.5 months");
-
-// Overdraft bank protection
-const accounts = [
-  { id: "acc-1", type: "bank", balance: -500000 }, // Overdraft
-  { id: "acc-2", type: "cash", balance: 200000 },
-  { id: "acc-3", type: "credit", balance: -300000 } // Card liability
+console.log("\n[5/6] Testing Whole-Ledger Balances & Monthly Cash Flow...");
+const ledgerAccounts: Account[] = [
+  { id: "bank", name: "Bank", type: "bank", startingBalancePaise: 10000 },
+  { id: "card", name: "Card", type: "credit", startingBalancePaise: 5000 },
+  { id: "cash", name: "Wallet", type: "cash", startingBalancePaise: 0 }
 ];
-
-let derivedLiquidCash = 0;
-let derivedCreditDebt = 0;
-for (const a of accounts) {
-  if (a.type === "credit") {
-    derivedCreditDebt += Math.abs(a.balance);
-  } else {
-    derivedLiquidCash += Math.max(0, a.balance);
-  }
-}
-
-assert(derivedLiquidCash === 200000, "Bank overdraft clamped to 0 so it doesn't inflate or corrupt liquid cash");
-assert(derivedCreditDebt === 300000, "Credit card liabilities calculated cleanly");
+const ledger: Transaction[] = [
+  { id: "sep", date: "2026-09-01", type: "income", accountId: "bank", category: "Salary", notes: "", tags: [], isRecurring: false, amountPaise: 20000 },
+  { id: "oct", date: "2026-10-01", type: "expense", accountId: "bank", category: "Rent", notes: "", tags: [], isRecurring: true, amountPaise: 10000 },
+  { id: "card-exp", date: "2026-10-02", type: "expense", accountId: "card", category: "Groceries", notes: "", tags: [], isRecurring: false, amountPaise: 2500 }
+];
+const balances = calculateAccountBalances(ledgerAccounts, ledger);
+assert(balances.bank === 20000, "Current balance includes prior months' income");
+assert(balances.card === -7500, "Card purchases increase opening outstanding debt");
+assert(balances.cash === 0, "Zero-balance accounts remain valid");
+assert(calculateCashPosition(ledgerAccounts, balances).creditDebtPaise === 7500, "Outstanding card debt is not treated as cash");
+const repaid = calculateAccountBalances(ledgerAccounts, [...ledger, { ...ledger[0], id: "payment", accountId: "card", amountPaise: 8000 }]);
+assert(calculateCashPosition(ledgerAccounts, repaid).creditDebtPaise === 0, "Overpaid card balance is credit, not a liability");
+const overdraft = calculateCashPosition(ledgerAccounts, { bank: -5000, cash: 2000, card: -7500 });
+assert(overdraft.liquidCashPaise === -3000 && overdraft.netCashPositionPaise === -10500, "Overdraft is visible in the net cash position");
+const october = calculateMonthlySummary(ledger.filter((tx) => tx.date.startsWith("2026-10")));
+assert(october.totalInflowPaise === 0 && october.totalOutflowPaise === 12500, "Monthly totals exclude September income");
+assert(october.recurringCommitmentPaise === 10000, "Recorded recurring bills counted once within total spending");
+const deficitSummary = calculateMonthlySummary([{ ...ledger[0], amountPaise: 100 }, { ...ledger[1], amountPaise: 150 }]);
+assert(deficitSummary.savingsRatePercentage === -50, "Negative savings rate is not hidden");
+assert(calculateMonthlySummary([]).netSavingsPaise === 0, "Empty month has zero net savings");
 
 // ----------------------------------------------------------------------
 // 6. CSV DATA EXPORT & SNAPSHOT STRESS DATA GENERATION
 // ----------------------------------------------------------------------
 console.log("\n[6/6] Testing CSV Escaping & Realistic Multi-Month Ledger Stress...");
 
-function exportTransactionsToCsv(txs: any[], accountMap: Record<string, string>): string {
-  const headers = [
-    "ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)"
-  ];
-
-  const rows = txs.map((t) => [
-    t.id,
-    t.date,
-    t.type,
-    `"${accountMap[t.accountId] || "Primary Account"}"`,
-    `"${t.category || ""}"`,
-    `"${(t.tags || []).join(" ")}"`,
-    t.isRecurring ? "YES" : "NO",
-    `"${(t.notes || "").replace(/"/g, '""')}"`,
-    ((t.amountPaise || 0) / 100).toFixed(2),
-    (t.amountPaise || 0).toString()
-  ]);
-
-  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-}
-
-const specialTx = {
+const specialTx: Transaction = {
   id: "tx-test-csv",
   date: "2026-10-20",
   type: "expense",
@@ -299,6 +225,10 @@ const csv = exportTransactionsToCsv([specialTx], { "acc-primary": "Primary Amoun
 assert(csv.includes('""Bawarchi""'), "Double quotes inside notes escaped as double double-quotes in CSV");
 assert(csv.includes("2450.50"), "Amount formatted as 2450.50 in INR column");
 assert(csv.includes("245050"), "Whole paise 245050 integer preserved in Paise column");
+assert(exportTransactionsToCsv([{ ...specialTx, amountPaise: Number.MAX_SAFE_INTEGER }], {}).includes("90071992547409.91"),
+  "CSV decimal output preserves maximum supported paise precision");
+assert(exportTransactionsToCsv([{ ...specialTx, category: 'Food, "special"', tags: ['#A"B'] }], { "acc-primary": 'Bank "One"' }).includes('"Bank ""One"""'),
+  "Quotes in account names are escaped by the production CSV exporter");
 
 // Google Sheets & Excel Detailed Analysis Engine Tests
 console.log("\nTesting Google Sheets & Excel Financial Analysis Generator...");
@@ -491,7 +421,8 @@ for (const tx of stressTxs) {
   }
 }
 
-assert(typeof stressBalances["acc-primary"] === "number", "Primary balance reconciled successfully");
+assert(calculateAccountBalances(sampleAccounts, stressTxs)["acc-primary"] === stressBalances["acc-primary"],
+  "Production account balances reconcile with the complete multi-month stress ledger");
 
 // ----------------------------------------------------------------------
 // 7. TRAVEL & TRIP EXPENSE PRECISION & SPLIT ENGINE TESTS

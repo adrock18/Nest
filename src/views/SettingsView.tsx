@@ -1,14 +1,17 @@
 import React, { useState } from "react";
 import { Database, ShieldCheck, Download, HardDrive, CheckCircle2, Copy, FileSpreadsheet, Plus, Trash2, Pencil, Landmark, CreditCard, Banknote, Save } from "lucide-react";
-import { Transaction, Account, CategoryBudget } from "../types";
-import { buildAnalysisSheet } from "../utils/export";
+import { Transaction, Account, CategoryBudget, Category, Trip, TripExpense } from "../types";
+import { buildAnalysisSheet, exportTransactionsToCsv } from "../utils/export";
 import { formatPaiseToRupees } from "../utils/money";
-import { api } from "../services/api";
+import { api, isTauriDesktop } from "../services/api";
 
 interface SettingsViewProps {
   transactions: Transaction[];
   accounts: Account[];
   budgets?: CategoryBudget[];
+  categories: Category[];
+  trips: Trip[];
+  tripExpenses: TripExpense[];
   databasePath?: string;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
@@ -25,12 +28,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   transactions,
   accounts,
   budgets = [],
+  categories,
+  trips,
+  tripExpenses,
   databasePath = "%LOCALAPPDATA%\\Nest\\nest.db",
   onAddAccount,
   onEditAccount,
   onDeleteAccount
 }) => {
   const [backupMessage, setBackupMessage] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [isBackingUp, setIsBackingUp] = useState(false);
 
   const safeAccounts = accounts || [];
   const safeTransactions = transactions || [];
@@ -45,6 +53,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // 1-Click Copy for Google Sheets
   const handleCopyForGoogleSheets = async () => {
+    setBackupError("");
     const sheetContent = buildAnalysisSheet({
       accounts: safeAccounts,
       transactions: safeTransactions,
@@ -54,20 +63,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       await navigator.clipboard.writeText(sheetContent);
       setBackupMessage("Copied to clipboard! Open Google Sheets and press Ctrl+V to paste your complete revenue, spending & ledger analysis.");
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = sheetContent;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setBackupMessage("Copied to clipboard! Open Google Sheets and press Ctrl+V to paste.");
+    } catch (error) {
+      setBackupMessage("");
+      setBackupError(`Clipboard copy failed. Use the CSV export instead: ${String(error)}`);
     }
     setTimeout(() => setBackupMessage(""), 6000);
   };
 
   // Analysis CSV Export
   const handleExportAnalysisCSV = () => {
+    setBackupError("");
     const csvContent = buildAnalysisSheet({
       accounts: safeAccounts,
       transactions: safeTransactions,
@@ -82,24 +87,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setBackupMessage("Comprehensive Revenue & Spending analysis exported for Excel / Google Sheets!");
     setTimeout(() => setBackupMessage(""), 5000);
   };
 
   // Raw CSV
   const handleExportRawCSV = () => {
-    const headers = ["ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)"];
-    const rows = safeTransactions.map((t) => [
-      t.id, t.date, t.type,
-      `"${accountMap[t.accountId] || "Primary Account"}"`,
-      `"${t.category || ""}"`,
-      `"${(t.tags || []).join(" ")}"`,
-      t.isRecurring ? "YES" : "NO",
-      `"${(t.notes || "").replace(/"/g, '""')}"`,
-      ((t.amountPaise || 0) / 100).toFixed(2),
-      (t.amountPaise || 0).toString()
-    ]);
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    setBackupError("");
+    const csvContent = exportTransactionsToCsv(safeTransactions, accountMap);
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -108,12 +104,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setBackupMessage("Raw itemized ledger exported successfully!");
     setTimeout(() => setBackupMessage(""), 4000);
   };
 
   // JSON Snapshot
   const handleDownloadBackup = () => {
+    setBackupError("");
     const backupData = {
       schemaVersion: "1.1.0",
       timestamp: new Date().toISOString(),
@@ -124,7 +122,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       },
       accounts: safeAccounts,
       budgets: safeBudgets,
-      transactions: safeTransactions
+      transactions: safeTransactions,
+      categories,
+      trips,
+      tripExpenses
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -134,12 +135,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setBackupMessage("JSON snapshot backup with Accounts, Budgets & Tags exported!");
     setTimeout(() => setBackupMessage(""), 4000);
   };
 
   // VACUUM Backup
   const handleVacuumBackup = async () => {
+    if (isBackingUp) return;
+    setBackupMessage("");
+    setBackupError("");
+    setIsBackingUp(true);
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").split("T").join("_");
       // Use the same directory as the database
@@ -148,15 +154,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await api.backupDatabase(targetPath);
       setBackupMessage(`SQLite VACUUM backup created: ${targetPath}`);
     } catch (err) {
-      setBackupMessage(`Backup failed: ${err}`);
+      setBackupError(`Backup failed: ${err}`);
+    } finally {
+      setIsBackingUp(false);
     }
     setTimeout(() => setBackupMessage(""), 8000);
   };
 
   return (
     <div className="view-content-wrapper" style={{ maxWidth: "840px" }}>
+      <div className="view-heading"><div><div className="eyebrow">YOUR DATA, YOUR DEVICE</div><h2>Settings & backups</h2>
+        <p>Manage accounts and export your complete history, across all months.</p></div></div>
+      {backupError && <div className="form-error" role="alert">{backupError}</div>}
       {backupMessage && (
-        <div style={{
+        <div role="status" style={{
           display: "flex",
           alignItems: "center",
           gap: "8px",
@@ -295,9 +306,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Download size={15} />
             <span>Export Portable Snapshot (.json)</span>
           </button>
-          <button className="btn-primary" id="btn-vacuum-backup" onClick={handleVacuumBackup} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <button className="btn-primary" id="btn-vacuum-backup" onClick={handleVacuumBackup} disabled={isBackingUp || !isTauriDesktop()}
+            title={isTauriDesktop() ? "Create a verified SQLite backup" : "Available in the desktop app only"} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <Save size={15} />
-            <span>SQLite VACUUM Backup (.db)</span>
+            <span>{isBackingUp ? "Creating backup..." : "SQLite VACUUM Backup (.db)"}</span>
           </button>
         </div>
       </div>
@@ -310,13 +322,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>Local Database & Storage</span>
           </div>
           <span className="badge-tag badge-income">
-            <ShieldCheck size={12} /> Air-Gapped (100% Offline)
+            <ShieldCheck size={12} /> {isTauriDesktop() ? "Local & Offline" : "Browser preview"}
           </span>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "13px", color: "var(--text-secondary)" }}>
           <p>
-            Nest operates 100% offline. All financial transactions, accounts, and category budgets are persisted in your local SQLite database without third-party cloud servers.
+            {isTauriDesktop() ? "Nest operates offline. Transactions, accounts, and budgets are stored in your local SQLite database without cloud servers."
+              : "This browser preview stores data in localStorage, separately from the desktop app. Export a JSON snapshot before clearing browser data. SQLite backups require the desktop app."}
           </p>
           <div style={{
             padding: "10px 14px",

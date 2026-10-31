@@ -8,6 +8,31 @@
 
 ---
 
+## V1 Workspace Improvements
+
+- **Clear monthly overview**: A colorful cash-flow hero, spending distribution,
+  budget alerts, and account cards work in both dark and light mode.
+- **Correct time scope**: The selected month controls income, spending, and
+  transaction views. Account balances and Settings exports always include all
+  recorded dates.
+- **Dependable entry**: Save errors keep your input visible. Dates are validated
+  as calendar dates, money is parsed with integer arithmetic, and zero starting
+  balances are allowed.
+- **Practical budgets**: Create categories, assign expense-category limits, and
+  distinguish approaching, reached, and exceeded limits. Limits repeat each
+  month; editing a limit changes the shared monthly template.
+- **Honest preview mode**: Browser development uses separate localStorage data,
+  with sample data only when storage is absent. SQLite backups require the
+  desktop app. A portable JSON snapshot includes all recorded months and
+  related categories and existing travel records.
+
+Run `npm test` for finance and browser-storage regressions, `npm run build` for
+the frontend, and `cargo test --manifest-path src-tauri/Cargo.toml` for native
+SQLite validation. A passing build is not installer/restore-drill acceptance:
+those remain separate V1 release checks.
+
+---
+
 ## 1. Project Philosophy
 
 Nest is built for daily, practical personal finance management without relying on third-party cloud servers or monthly software subscriptions:

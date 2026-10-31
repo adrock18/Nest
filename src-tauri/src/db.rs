@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use crate::models::{Account, Category, CategoryBudget, MonthlySummary, Transaction, Trip, TripExpense};
 
+const MAX_SAFE_PAISE: i64 = 9_007_199_254_740_991;
+
 pub fn get_db_path() -> PathBuf {
     let mut base_dir = dirs_fallback();
     base_dir.push("Nest");
@@ -407,6 +409,7 @@ fn parse_transaction_row(row: &rusqlite::Row) -> Result<Transaction> {
 }
 
 pub fn insert_transaction(conn: &Connection, tx: &Transaction) -> Result<()> {
+    validate_transaction(conn, tx)?;
     let tags_json = serde_json::to_string(&tx.tags).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "INSERT INTO transactions (id, date, flow_type, account_id, category, notes, tags_json, is_recurring, amount_paise)
@@ -432,6 +435,7 @@ pub fn remove_transaction(conn: &Connection, id: &str) -> Result<bool> {
 }
 
 pub fn update_transaction(conn: &Connection, tx: &Transaction) -> Result<bool> {
+    validate_transaction(conn, tx)?;
     let tags_json = serde_json::to_string(&tx.tags).unwrap_or_else(|_| "[]".to_string());
     let affected = conn.execute(
         "UPDATE transactions SET date = ?1, flow_type = ?2, account_id = ?3, category = ?4, notes = ?5, tags_json = ?6, is_recurring = ?7, amount_paise = ?8 WHERE id = ?9",
@@ -452,6 +456,12 @@ pub fn update_transaction(conn: &Connection, tx: &Transaction) -> Result<bool> {
 
 // Account CRUD
 pub fn insert_account(conn: &Connection, acc: &Account) -> Result<()> {
+    if acc.id.trim().is_empty() || acc.name.trim().is_empty()
+        || !matches!(acc.account_type.as_str(), "bank" | "credit" | "cash")
+        || !(0..=MAX_SAFE_PAISE).contains(&acc.starting_balance_paise)
+    {
+        return Err(invalid_input("Account requires a name, valid type and non-negative safe whole-paise starting balance."));
+    }
     conn.execute(
         "INSERT INTO accounts (id, name, account_type, starting_balance_paise) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, account_type = excluded.account_type, starting_balance_paise = excluded.starting_balance_paise",
@@ -461,6 +471,13 @@ pub fn insert_account(conn: &Connection, acc: &Account) -> Result<()> {
 }
 
 pub fn remove_account(conn: &Connection, id: &str) -> Result<bool> {
+    let used: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM transactions WHERE account_id = ?1)",
+        params![id], |row| row.get(0),
+    )?;
+    if used {
+        return Err(invalid_input("This account has transactions. Move or delete them before deleting the account."));
+    }
     let affected = conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
     Ok(affected > 0)
 }
@@ -483,6 +500,9 @@ pub fn fetch_budgets(conn: &Connection) -> Result<Vec<CategoryBudget>> {
 }
 
 pub fn save_budget_limit(conn: &Connection, budget: &CategoryBudget) -> Result<()> {
+    if budget.category.trim().is_empty() || !(1..=MAX_SAFE_PAISE).contains(&budget.limit_paise) {
+        return Err(invalid_input("Budget requires a category and a positive safe whole-paise limit."));
+    }
     conn.execute(
         "INSERT INTO budgets (category, limit_paise, color) VALUES (?1, ?2, ?3)
          ON CONFLICT(category) DO UPDATE SET limit_paise = excluded.limit_paise, color = excluded.color",
@@ -545,6 +565,9 @@ pub fn calculate_monthly_summary(conn: &Connection, month_prefix: &str) -> Resul
         |row| row.get(0),
     )?;
 
+    if [inflow, outflow, recurring].iter().any(|amount| !(0..=MAX_SAFE_PAISE).contains(amount)) {
+        return Err(invalid_input("Monthly total exceeds the supported whole-paise precision limit."));
+    }
     let net_savings = inflow - outflow;
     let savings_rate = if inflow > 0 {
         ((net_savings as f64) / (inflow as f64)) * 100.0
@@ -556,7 +579,7 @@ pub fn calculate_monthly_summary(conn: &Connection, month_prefix: &str) -> Resul
         total_inflow_paise: inflow,
         total_outflow_paise: outflow,
         net_savings_paise: net_savings,
-        savings_rate_percentage: if savings_rate < 0.0 { 0.0 } else { savings_rate },
+        savings_rate_percentage: savings_rate,
         recurring_commitment_paise: recurring,
     })
 }
@@ -564,7 +587,52 @@ pub fn calculate_monthly_summary(conn: &Connection, month_prefix: &str) -> Resul
 // Point-in-Time SQLite Backup Drill
 pub fn vacuum_into_backup(conn: &Connection, target_file_path: &Path) -> Result<()> {
     let target_str = target_file_path.to_string_lossy();
-    conn.execute(&format!("VACUUM INTO '{}';", target_str.replace("'", "''")), [])?;
+    conn.execute("VACUUM INTO ?1", params![target_str.as_ref()])?;
+    let backup = Connection::open_with_flags(target_file_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let integrity: String = backup.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+    if integrity != "ok" {
+        return Err(invalid_input(&format!("Backup verification failed: {}", integrity)));
+    }
+    Ok(())
+}
+
+fn invalid_input(message: &str) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput, message.to_string(),
+    )))
+}
+
+fn valid_calendar_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-'
+        || bytes.iter().enumerate().any(|(i, c)| i != 4 && i != 7 && !c.is_ascii_digit()) {
+        return false;
+    }
+    let year: u32 = value[..4].parse().unwrap();
+    let month: usize = value[5..7].parse().unwrap();
+    let day: u32 = value[8..].parse().unwrap();
+    if year == 0 || !(1..=12).contains(&month) || day == 0 { return false; }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    day <= days[month - 1]
+}
+
+fn validate_transaction(conn: &Connection, tx: &Transaction) -> Result<()> {
+    if tx.id.trim().is_empty() || !valid_calendar_date(&tx.date)
+        || !matches!(tx.flow_type.as_str(), "income" | "expense")
+        || !(1..=MAX_SAFE_PAISE).contains(&tx.amount_paise) {
+        return Err(invalid_input("Transaction requires a valid date, flow and positive safe whole-paise amount."));
+    }
+    let account_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1)", params![tx.account_id], |row| row.get(0),
+    )?;
+    let category_matches: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE name = ?1 AND is_income = ?2)",
+        params![tx.category, if tx.flow_type == "income" { 1 } else { 0 }], |row| row.get(0),
+    )?;
+    if !account_exists || !category_matches {
+        return Err(invalid_input("Choose an existing account and a category matching the transaction flow."));
+    }
     Ok(())
 }
 
@@ -834,12 +902,20 @@ mod tests {
             amount_paise: 99900,
         };
 
-        // Insert must succeed safely without executing SQL injections
+        insert_account(&conn, &Account {
+            id: malicious_tx.account_id.clone(), name: "Literal account".into(),
+            account_type: "bank".into(), starting_balance_paise: 0,
+        }).unwrap();
+        insert_category(&conn, &Category {
+            id: "cat-literal".into(), name: malicious_tx.category.clone(),
+            color: "#64748b".into(), is_income: false,
+        }).unwrap();
+        // Valid references with SQL-like text must remain literal values.
         insert_transaction(&conn, &malicious_tx).unwrap();
 
         // Verify accounts table still exists and intact
         let accounts = fetch_accounts(&conn).unwrap();
-        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts.len(), 2);
 
         // Verify malicious tx was stored literally
         let txs = fetch_transactions(&conn, None).unwrap();
@@ -857,7 +933,7 @@ mod tests {
 
         let unicode_tx = Transaction {
             id: "tx-unicode-1".to_string(),
-            date: "2026-02-29".to_string(), // Leap day string test
+            date: "2024-02-29".to_string(),
             flow_type: "expense".to_string(),
             account_id: "acc-primary".to_string(),
             category: "Other".to_string(),
@@ -873,6 +949,75 @@ mod tests {
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].notes, long_notes);
         assert_eq!(fetched[0].tags, vec!["#दैनिक".to_string(), "#🛒Market".to_string()]);
+    }
+
+    #[test]
+    fn test_v1_validation_and_account_references() {
+        let conn = setup_test_db();
+        let mut tx = Transaction {
+            id: "tx-validation".into(), date: "2024-02-29".into(),
+            flow_type: "expense".into(), account_id: "acc-primary".into(),
+            category: "Groceries".into(), notes: String::new(), tags: vec![],
+            is_recurring: false, amount_paise: 1,
+        };
+        for date in ["2026-02-29", "2100-02-29", "2026-04-31", "0000-01-01", "invalid"] {
+            tx.date = date.into();
+            assert!(insert_transaction(&conn, &tx).is_err());
+        }
+        tx.date = "2024-02-29".into();
+        for amount in [0, -1, 9_007_199_254_740_992] {
+            tx.amount_paise = amount;
+            assert!(insert_transaction(&conn, &tx).is_err());
+        }
+        tx.amount_paise = 1;
+        tx.account_id = "missing".into();
+        assert!(insert_transaction(&conn, &tx).is_err());
+        tx.account_id = "acc-primary".into();
+        tx.category = "Salary".into();
+        assert!(insert_transaction(&conn, &tx).is_err());
+        tx.category = "Groceries".into();
+        insert_transaction(&conn, &tx).unwrap();
+        assert!(remove_account(&conn, "acc-primary").is_err());
+        tx.date = "2026-04-31".into();
+        assert!(update_transaction(&conn, &tx).is_err());
+        assert_eq!(fetch_transactions(&conn, None).unwrap()[0].date, "2024-02-29");
+        let summary = calculate_monthly_summary(&conn, "2024-02").unwrap();
+        assert_eq!(summary.net_savings_paise, -1);
+        assert_eq!(summary.savings_rate_percentage, 0.0);
+        assert!(save_budget_limit(&conn, &CategoryBudget {
+            category: "Groceries".into(), limit_paise: 0, color: "#10b981".into(),
+        }).is_err());
+        insert_account(&conn, &Account {
+            id: "zero-balance".into(), name: "Wallet".into(), account_type: "cash".into(),
+            starting_balance_paise: 0,
+        }).unwrap();
+    }
+
+    #[test]
+    fn test_deficit_savings_rate_is_not_hidden() {
+        let conn = setup_test_db();
+        for (id, flow, category, amount) in [("in", "income", "Salary", 100), ("out", "expense", "Groceries", 150)] {
+            insert_transaction(&conn, &Transaction {
+                id: id.into(), date: "2026-10-01".into(), flow_type: flow.into(),
+                account_id: "acc-primary".into(), category: category.into(),
+                notes: String::new(), tags: vec![], is_recurring: false, amount_paise: amount,
+            }).unwrap();
+        }
+        assert_eq!(calculate_monthly_summary(&conn, "2026-10").unwrap().savings_rate_percentage, -50.0);
+    }
+
+    #[test]
+    fn test_monthly_summary_rejects_unsafe_aggregate() {
+        let conn = setup_test_db();
+        for id in ["large-1", "large-2"] {
+            insert_transaction(&conn, &Transaction {
+                id: id.into(), date: "2026-10-01".into(), flow_type: "income".into(),
+                account_id: "acc-primary".into(), category: "Salary".into(),
+                notes: String::new(), tags: vec![], is_recurring: false,
+                amount_paise: MAX_SAFE_PAISE,
+            }).unwrap();
+        }
+        assert!(calculate_monthly_summary(&conn, "2026-10").is_err());
     }
 
     #[test]
@@ -1113,4 +1258,3 @@ mod tests {
         assert_eq!(trips_after.len(), 1);
     }
 }
-

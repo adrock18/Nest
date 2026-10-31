@@ -1,20 +1,27 @@
 // Currency formatting utility adhering to Indian Rupee and Paise standards
 
+const rupeeGrouping = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+
+export function formatPaiseToDecimal(paise: number): string {
+  if (!Number.isSafeInteger(paise)) throw new Error("Money must be a safe whole-paise amount.");
+  const absolute = BigInt(Math.abs(paise));
+  return `${paise < 0 ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
+}
+
+export function addPaise(left: number, right: number): number {
+  const result = left + right;
+  if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right) || !Number.isSafeInteger(result)) {
+    throw new Error("Financial total exceeds the supported whole-paise precision limit.");
+  }
+  return result;
+}
+
 export function formatPaiseToRupees(paise: number): string {
   if (isNaN(paise) || !isFinite(paise)) {
     return "₹0.00";
   }
-  const isNegative = paise < 0;
-  const absRupees = Math.abs(paise) / 100;
-
-  const formatted = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(absRupees);
-
-  return isNegative ? `-${formatted}` : formatted;
+  const [whole, fraction] = formatPaiseToDecimal(Math.abs(paise)).split(".");
+  return `${paise < 0 ? "-" : ""}₹${rupeeGrouping.format(BigInt(whole))}.${fraction}`;
 }
 
 export function parseRupeesToPaise(input: string): number {
@@ -34,17 +41,16 @@ export function parseRupeesToPaise(input: string): number {
     throw new Error("Amount must be a valid positive number.");
   }
 
-  const numeric = parseFloat(sanitized);
-  if (isNaN(numeric) || numeric <= 0 || !isFinite(numeric)) {
-    throw new Error("Amount must be a positive number.");
-  }
-
-  // Round to nearest whole integer paise (e.g., 12.50 -> 1250)
-  const paise = Math.round(numeric * 100);
-  if (paise <= 0) {
+  const [whole, fraction = ""] = sanitized.split(".");
+  const digits = fraction.padEnd(3, "0");
+  const paise = BigInt(whole || "0") * 100n
+    + BigInt(digits.slice(0, 2))
+    + (Number(digits[2]) >= 5 ? 1n : 0n);
+  if (paise <= 0n) {
     throw new Error("Amount must be at least 1 paisa (₹0.01).");
   }
-
-  return paise;
+  if (paise > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Amount exceeds the supported precision limit.");
+  }
+  return Number(paise);
 }
-

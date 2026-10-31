@@ -2,11 +2,12 @@ import React, { useState, useEffect } from "react";
 import { X, Check, Landmark, CreditCard, Banknote } from "lucide-react";
 import { Account, AccountType } from "../types";
 import { parseRupeesToPaise, formatPaiseToRupees } from "../utils/money";
+import { Modal } from "./Modal";
 
 interface AddAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaveAccount: (account: Account) => void;
+  onSaveAccount: (account: Account) => Promise<void>;
   editingAccount?: Account | null;
 }
 
@@ -28,6 +29,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
   const [accountType, setAccountType] = useState<AccountType>("bank");
   const [balanceInput, setBalanceInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (editingAccount) {
@@ -44,8 +46,9 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     setErrorMessage("");
 
     const trimmedName = name.trim();
@@ -56,34 +59,33 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
 
     let balancePaise: number;
     try {
-      balancePaise = parseRupeesToPaise(balanceInput || "0");
+      const input = balanceInput.trim();
+      balancePaise = !input || /^0+(?:\.0+)?$/.test(input) ? 0 : parseRupeesToPaise(input);
     } catch {
       setErrorMessage("Please enter a valid amount for the starting balance.");
       return;
     }
 
     const account: Account = {
-      id: editingAccount?.id || `acc-${Date.now()}`,
+      id: editingAccount?.id || `acc-${crypto.randomUUID()}`,
       name: trimmedName,
       type: accountType,
       startingBalancePaise: balancePaise
     };
 
-    onSaveAccount(account);
-    onClose();
+    setIsSaving(true);
+    try {
+      await onSaveAccount(account);
+      onClose();
+    } catch (error) {
+      setErrorMessage(String(error));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <div style={{
-      position: "fixed",
-      inset: 0,
-      backgroundColor: "rgba(0, 0, 0, 0.75)",
-      backdropFilter: "blur(6px)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 1000
-    }}>
+    <Modal title={isEditing ? "Edit Account" : "Add Account"} onClose={onClose} busy={isSaving}>
       <div style={{
         background: "var(--bg-surface)",
         border: "1px solid var(--border-medium)",
@@ -96,13 +98,13 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
           <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-main)" }}>
             {isEditing ? "Edit Account" : "Add Account"}
           </h2>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
+          <button onClick={onClose} disabled={isSaving} aria-label="Close account form" style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
             <X size={18} />
           </button>
         </div>
 
         {errorMessage && (
-          <div style={{
+          <div role="alert" style={{
             padding: "8px 12px",
             background: "var(--expense-bg)",
             border: "1px solid var(--expense-border)",
@@ -153,6 +155,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
             </label>
             <input
               type="text"
+              aria-label="Account name"
               required
               autoFocus
               placeholder="e.g. HDFC Savings, ICICI Credit Card, Wallet"
@@ -178,6 +181,8 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
             <input
               type="number"
               step="0.01"
+              min="0"
+              aria-label={accountType === "credit" ? "Current outstanding in rupees" : "Starting balance in rupees"}
               placeholder="0.00"
               value={balanceInput}
               onChange={(e) => setBalanceInput(e.target.value)}
@@ -197,14 +202,14 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
 
           {/* Actions */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={isSaving}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={isSaving}>
               <Check size={16} />
-              <span>{isEditing ? "Save Changes" : "Add Account"}</span>
+              <span>{isSaving ? "Saving..." : isEditing ? "Save Changes" : "Add Account"}</span>
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };

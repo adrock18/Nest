@@ -1,18 +1,9 @@
-import React, { useState } from "react";
-import { 
-  ArrowDownRight, 
-  ArrowUpRight, 
-  PiggyBank, 
-  Percent, 
-  Wallet, 
-  CheckCircle2, 
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Info
-} from "lucide-react";
-import { MonthlyFinancialSummary, CategoryBudget, Account } from "../types";
-import { formatPaiseToRupees } from "../utils/money";
+import { ArrowDownLeft, ArrowUpRight, ArrowRight, PiggyBank, Percent, Wallet,
+  CreditCard, Landmark, Banknote, Target, AlertTriangle, Plus } from "lucide-react";
+import type { MonthlyFinancialSummary, CategoryBudget, Account } from "../types";
+import { formatPaiseToRupees, addPaise } from "../utils/money";
+import { formatMonthLabel } from "../utils/dates";
+import { calculateCashPosition, computeBudgetProgress } from "../utils/finance";
 
 interface DashboardViewProps {
   summary: MonthlyFinancialSummary;
@@ -20,500 +11,188 @@ interface DashboardViewProps {
   budgets: CategoryBudget[];
   accounts: Account[];
   accountBalances: Record<string, number>;
+  selectedMonth: string;
+  transactionCount: number;
   onNavigateToTransactions: () => void;
+  onNavigateToBudgets: () => void;
+  onOpenAddTransaction: () => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({
-  summary,
-  categoryBreakdown,
-  budgets,
-  accounts,
-  accountBalances,
-  onNavigateToTransactions
-}) => {
-  const [showSafeSpendExplainer, setShowSafeSpendExplainer] = useState(false);
-
-  // Time-aware greeting
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const currentDateStr = new Intl.DateTimeFormat("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric"
-  }).format(new Date());
-
-  const safeAccounts = accounts || [];
-  const safeBudgets = budgets || [];
-  const safeCategoryBreakdown = categoryBreakdown || [];
-  const safeBalances = accountBalances || {};
-
-  // Derive Liquid Cash Position (Bank + Cash) & Credit Card Liabilities
-  let liquidCashPaise = 0;
-  let creditDebtPaise = 0;
-
-  for (const acc of safeAccounts) {
-    const bal = safeBalances[acc.id] ?? acc.startingBalancePaise;
-    if (acc.type === "credit") {
-      creditDebtPaise += Math.abs(bal);
-    } else {
-      liquidCashPaise += Math.max(0, bal);
-    }
-  }
-
-  const netCashPositionPaise = liquidCashPaise - creditDebtPaise;
-
-  // Remaining Category Budget Commitments
-  const spentMap = safeCategoryBreakdown.reduce((acc, c) => {
-    acc[c.name] = c.spentPaise;
-    return acc;
-  }, {} as Record<string, number>);
-
-  let remainingBudgetsPaise = 0;
-  let overBudgetCount = 0;
-  let totalTrackedBudgets = safeBudgets.length;
-  let adheringBudgets = 0;
-
-  for (const b of safeBudgets) {
-    const spent = spentMap[b.category] || 0;
-    if (spent > b.limitPaise) {
-      overBudgetCount++;
-    } else {
-      adheringBudgets++;
-      remainingBudgetsPaise += (b.limitPaise - spent);
-    }
-  }
-
-  // Safe-to-Spend Calculation:
-  // Liquid Cash - Recurring Fixed Bills - Remaining Category Allocations
-  const safeToSpendPaise = Math.max(
-    0,
-    liquidCashPaise - summary.recurringCommitmentPaise - remainingBudgetsPaise
-  );
-
-  // Cash Runway in Months (Liquid Cash / Outflow)
-  const cashRunway = summary.totalOutflowPaise > 0
-    ? (liquidCashPaise / summary.totalOutflowPaise).toFixed(1)
-    : "12+";
-
-  // Budget Adherence Percentage
-  const budgetAdherencePct = totalTrackedBudgets > 0
-    ? Math.round((adheringBudgets / totalTrackedBudgets) * 100)
-    : 100;
-
-  // Financial Pulse Status Evaluation
-  let pulseStatus: "healthy" | "attention" | "action" = "healthy";
-  let pulseLabel = "Healthy";
-  const runwayNum = parseFloat(cashRunway);
-  if (overBudgetCount > 0 || summary.netSavingsPaise < 0) {
-    pulseStatus = "action";
-    pulseLabel = "Action Needed";
-  } else if ((!isNaN(runwayNum) && runwayNum < 2) || budgetAdherencePct < 85) {
-    pulseStatus = "attention";
-    pulseLabel = "Attention";
-  }
+export function DashboardView({ summary, categoryBreakdown, budgets, accounts, accountBalances,
+  selectedMonth, transactionCount, onNavigateToTransactions, onNavigateToBudgets,
+  onOpenAddTransaction }: DashboardViewProps) {
+  const { liquidCashPaise, creditDebtPaise, netCashPositionPaise } = calculateCashPosition(accounts, accountBalances);
+  const budgetRows = budgets.map((budget) => {
+    const spent = categoryBreakdown.find((category) => category.name === budget.category)?.spentPaise || 0;
+    return { ...budget, spent, ...computeBudgetProgress(spent, budget.limitPaise) };
+  }).sort((a, b) => b.pct - a.pct);
+  const alerts = budgetRows.filter((budget) => budget.isOver || budget.isAtLimit || budget.isNear);
+  const remainingPaise = budgetRows.reduce((total, budget) => addPaise(total, budget.remainingPaise), 0);
+  const allocatedPaise = budgets.reduce((total, budget) => addPaise(total, budget.limitPaise), 0);
+  const hasActivity = transactionCount > 0;
+  const deficit = summary.netSavingsPaise < 0;
+  const status = !hasActivity ? "No activity yet" : deficit || alerts.some((b) => b.isOver) ? "Needs attention"
+    : alerts.length > 0 ? "Limits in sight" : "Within your budgets";
+  const ringSegments = categoryBreakdown.reduce<{ stops: string[]; offset: number }>((result, category) => {
+    result.stops.push(`${category.color} ${result.offset}% ${result.offset + category.pct}%`);
+    result.offset += category.pct;
+    return result;
+  }, { stops: [], offset: 0 }).stops.join(", ");
 
   return (
-    <div className="view-content-wrapper">
-      {/* 1. Contextual Header: Observe financial state in 5-10 seconds */}
-      <div className="command-header-row">
+    <div className="view-content-wrapper dashboard-workspace">
+      <div className="dashboard-heading">
         <div>
-          <h1 className="greeting-title">{greeting}.</h1>
-          <div className="greeting-subtitle">
-            <span>{currentDateStr}</span>
-            <span>•</span>
-            <span style={{ color: "var(--income-emerald)" }}>Household Ledger Verified</span>
-          </div>
+          <div className="eyebrow">YOUR MONTH, AT A GLANCE</div>
+          <h2>{formatMonthLabel(selectedMonth)}</h2>
+          <p>A clearer picture of what came in, what went out, and what stayed.</p>
         </div>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button 
-            className="btn-secondary" 
-            onClick={onNavigateToTransactions}
-            style={{ fontSize: "12px" }}
-          >
-            Ledger View
-            <span className="kbd-chip">T</span>
-          </button>
-        </div>
+        <span className={`dashboard-status ${!hasActivity ? "neutral" : deficit || alerts.some((b) => b.isOver) ? "danger" : alerts.length > 0 ? "warning" : "healthy"}`}>
+          <span className="status-indicator-dot" />{status}
+        </span>
       </div>
 
-      {/* 2. Financial Pulse Bar: Clear, high-density health metrics */}
-      <div className="financial-pulse-bar" id="financial-pulse-strip">
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Financial Pulse:
-          </span>
-          <span className={`pulse-status-badge ${pulseStatus}`}>
-            <span 
-              className="status-indicator-dot" 
-              style={{ 
-                background: pulseStatus === "healthy" ? "var(--income-emerald)" : pulseStatus === "attention" ? "var(--warning-amber)" : "var(--expense-rose)",
-                boxShadow: `0 0 6px ${pulseStatus === "healthy" ? "var(--income-emerald)" : pulseStatus === "attention" ? "var(--warning-amber)" : "var(--expense-rose)"}`
-              }} 
-            />
-            {pulseLabel}
-          </span>
-        </div>
-
-        <div className="pulse-metrics-strip">
-          <div className="pulse-metric-item">
-            <span className="pulse-metric-label">Cash Runway:</span>
-            <span className="pulse-metric-val">{cashRunway} months</span>
-          </div>
-          <div className="pulse-metric-item">
-            <span className="pulse-metric-label">Savings Rate:</span>
-            <span className="pulse-metric-val font-mono">{summary.savingsRatePercentage.toFixed(0)}%</span>
-          </div>
-          <div className="pulse-metric-item">
-            <span className="pulse-metric-label">Budget Adherence:</span>
-            <span className="pulse-metric-val font-mono">{budgetAdherencePct}%</span>
-          </div>
-          <div className="pulse-metric-item">
-            <span className="pulse-metric-label">Fixed Commitments:</span>
-            <span className="pulse-metric-val font-mono">{formatPaiseToRupees(summary.recurringCommitmentPaise)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. "Needs Attention" Triage Section */}
-      {overBudgetCount > 0 ? (
-        <div className="needs-attention-box" style={{ borderColor: "var(--expense-border)" }}>
-          <div className="needs-attention-icon" style={{ background: "var(--expense-bg)", color: "var(--expense-rose)" }}>
-            <AlertTriangle size={17} />
-          </div>
-          <div className="needs-attention-content">
-            <div className="needs-attention-title">
-              {overBudgetCount} {overBudgetCount === 1 ? "category exceeds" : "categories exceed"} allocated monthly spending cap
-            </div>
-            <div className="needs-attention-desc">
-              Review recent transactions in Budgets to reconcile overspending before end of month.
-            </div>
-          </div>
-          <button 
-            className="btn-secondary" 
-            style={{ fontSize: "11.5px", padding: "5px 10px" }}
-            onClick={onNavigateToTransactions}
-          >
-            Review Transactions
-          </button>
-        </div>
-      ) : (
-        <div className="needs-attention-box">
-          <div className="needs-attention-icon" style={{ background: "var(--income-bg)", color: "var(--income-emerald)" }}>
-            <CheckCircle2 size={17} />
-          </div>
-          <div className="needs-attention-content">
-            <div className="needs-attention-title">All financial parameters within nominal targets</div>
-            <div className="needs-attention-desc">
-              Zero category overruns. Liquid cash reserves fully support upcoming recurring commitments.
-            </div>
-          </div>
+      {!hasActivity && (
+        <div className="dashboard-welcome">
+          <div className="welcome-icon"><Wallet size={22} /></div>
+          <div><h3>Start with one transaction</h3><p>Record an income or expense to bring this month into focus.</p></div>
+          <button className="btn-primary" onClick={onOpenAddTransaction}><Plus size={16} />Record transaction</button>
         </div>
       )}
 
-      {/* 4. Hero Section: Total Amount vs Safe-to-Spend */}
-      <div className="hero-finance-grid">
-        {/* Total Tracked Amount */}
-        <div className="hero-finance-card" id="card-net-worth">
-          <div className="hero-card-tag">Total Amount / Balance</div>
-          <div 
-            className="hero-card-amount font-mono" 
-            style={{ color: netCashPositionPaise >= 0 ? "var(--text-main)" : "var(--expense-rose)" }}
-          >
-            {formatPaiseToRupees(netCashPositionPaise)}
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "14px" }}>
-            Cumulative capital across all tracked inflows and spending
-          </div>
-          <div className="hero-card-footer">
-            <div style={{ display: "flex", gap: "16px", fontSize: "12px" }}>
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Total Inflows: </span>
-                <span className="font-mono" style={{ fontWeight: 600, color: "var(--income-emerald)" }}>
-                  +{formatPaiseToRupees(summary.totalInflowPaise)}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Total Spending: </span>
-                <span className="font-mono" style={{ fontWeight: 600, color: "var(--expense-rose)" }}>
-                  −{formatPaiseToRupees(summary.totalOutflowPaise)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Safe to Spend */}
-        <div className="hero-finance-card" id="card-safe-to-spend">
-          <div className="hero-card-tag" style={{ color: "var(--income-emerald)" }}>Safe-to-Spend Margin</div>
-          <div className="hero-card-amount font-mono" style={{ color: "var(--income-emerald)" }}>
-            {formatPaiseToRupees(safeToSpendPaise)}
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "14px" }}>
-            Unencumbered capital available for discretionary spending this month
-          </div>
-          <div className="hero-card-footer">
-            <button 
-              className="safe-spend-explainer-toggle"
-              onClick={() => setShowSafeSpendExplainer(!showSafeSpendExplainer)}
-            >
-              <Info size={14} />
-              <span>{showSafeSpendExplainer ? "Hide calculation math" : "Why this number?"}</span>
-              {showSafeSpendExplainer ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-          </div>
-
-          {showSafeSpendExplainer && (
-            <div className="safe-spend-breakdown-drawer">
-              <div className="math-row">
-                <span>Available Tracked Amount</span>
-                <span className="font-mono">{formatPaiseToRupees(liquidCashPaise)}</span>
-              </div>
-              <div className="math-row" style={{ color: "var(--expense-rose)" }}>
-                <span>− Fixed Recurring Bills</span>
-                <span className="font-mono">− {formatPaiseToRupees(summary.recurringCommitmentPaise)}</span>
-              </div>
-              <div className="math-row" style={{ color: "var(--expense-rose)" }}>
-                <span>− Remaining Budget Allocations</span>
-                <span className="font-mono">− {formatPaiseToRupees(remainingBudgetsPaise)}</span>
-              </div>
-              <div className="math-row result">
-                <span>= Safe to Spend</span>
-                <span className="font-mono" style={{ color: "var(--income-emerald)" }}>
-                  {formatPaiseToRupees(safeToSpendPaise)}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 5. 4 Core Monthly Flow Cards */}
-      <div className="dashboard-grid">
-        {/* Total Inflow */}
-        <div className="metric-card" id="card-inflow">
-          <div className="metric-header">
-            <span className="metric-label">Monthly Inflow</span>
-            <div className="metric-icon-bubble" style={{ background: "var(--income-bg)", color: "var(--income-emerald)" }}>
-              <ArrowDownRight size={17} />
-            </div>
-          </div>
-          <div className="metric-value income font-mono" id="val-total-inflow">
-            {formatPaiseToRupees(summary.totalInflowPaise)}
-          </div>
-          <div className="metric-subtext">Verified payroll & deposits</div>
-        </div>
-
-        {/* Total Spending */}
-        <div className="metric-card" id="card-outflow">
-          <div className="metric-header">
-            <span className="metric-label">Monthly Spending</span>
-            <div className="metric-icon-bubble" style={{ background: "var(--expense-bg)", color: "var(--expense-rose)" }}>
-              <ArrowUpRight size={17} />
-            </div>
-          </div>
-          <div className="metric-value expense font-mono" id="val-total-outflow">
-            {formatPaiseToRupees(summary.totalOutflowPaise)}
-          </div>
-          <div className="metric-subtext">
-            {formatPaiseToRupees(summary.recurringCommitmentPaise)} in recurring bills
-          </div>
-        </div>
-
-        {/* Net Savings */}
-        <div className="metric-card" id="card-net-savings">
-          <div className="metric-header">
-            <span className="metric-label">Net Retained</span>
-            <div className="metric-icon-bubble" style={{ 
-              background: summary.netSavingsPaise >= 0 ? "var(--income-bg)" : "var(--expense-bg)", 
-              color: summary.netSavingsPaise >= 0 ? "var(--income-emerald)" : "var(--expense-rose)" 
-            }}>
-              <PiggyBank size={17} />
-            </div>
-          </div>
-          <div 
-            className="metric-value font-mono" 
-            id="val-net-savings"
-            style={{ color: summary.netSavingsPaise >= 0 ? "var(--income-emerald)" : "var(--expense-rose)" }}
-          >
+      <section className="cashflow-hero" aria-label="Monthly cash flow">
+        <div className="cashflow-main">
+          <span className="eyebrow">MONTHLY NET SAVINGS</span>
+          <div className={`cashflow-value ${deficit ? "deficit" : ""}`} id="val-net-savings">
             {formatPaiseToRupees(summary.netSavingsPaise)}
           </div>
-          <div className="metric-subtext">Retained cash flow</div>
+          <p>{!hasActivity ? "Your monthly story starts here." : deficit ? "Spending exceeded recorded income this month."
+            : "Income left after this month's recorded spending."}</p>
+          <button className="hero-link" onClick={onNavigateToTransactions}>Explore your ledger <ArrowRight size={16} /></button>
         </div>
+        <div className="cashflow-side">
+          <div className="cashflow-line">
+            <div className="flow-icon income"><ArrowDownLeft size={19} /></div>
+            <div><span>Money in</span><strong id="val-total-inflow">{formatPaiseToRupees(summary.totalInflowPaise)}</strong></div>
+          </div>
+          <div className="cashflow-line">
+            <div className="flow-icon expense"><ArrowUpRight size={19} /></div>
+            <div><span>Money out</span><strong id="val-total-outflow">{formatPaiseToRupees(summary.totalOutflowPaise)}</strong></div>
+          </div>
+          <div className="cashflow-footnote">{transactionCount} recorded {transactionCount === 1 ? "transaction" : "transactions"} this month</div>
+        </div>
+      </section>
 
-        {/* Savings Rate */}
-        <div className="metric-card" id="card-savings-rate">
-          <div className="metric-header">
-            <span className="metric-label">Savings Rate</span>
-            <div className="metric-icon-bubble" style={{ background: "var(--warning-bg)", color: "var(--warning-amber)" }}>
-              <Percent size={15} />
-            </div>
+      <div className="dashboard-grid">
+        <div className="metric-card accent-savings">
+          <div className="metric-header"><span className="metric-label">Savings rate</span><Percent size={17} /></div>
+          <div className={`metric-value ${deficit ? "expense" : "income"}`} id="val-savings-rate">
+            {summary.totalInflowPaise > 0 ? `${summary.savingsRatePercentage.toFixed(1)}%` : "—"}
           </div>
-          <div 
-            className="metric-value font-mono" 
-            id="val-savings-rate"
-            style={{ color: summary.savingsRatePercentage >= 20 ? "var(--income-emerald)" : "var(--warning-amber)" }}
-          >
-            {summary.savingsRatePercentage.toFixed(0)}%
-          </div>
-          <div className="metric-subtext">
-            {summary.savingsRatePercentage >= 30 ? "Disciplined surplus (>30%)" : "Target: 20-30%"}
-          </div>
+          <div className="metric-subtext">{summary.totalInflowPaise > 0 ? "Net savings as a share of income" : "Record income to calculate this"}</div>
+        </div>
+        <div className="metric-card accent-cash">
+          <div className="metric-header"><span className="metric-label">Liquid balance</span><Wallet size={17} /></div>
+          <div className="metric-value">{formatPaiseToRupees(liquidCashPaise)}</div>
+          <div className="metric-subtext">Bank + cash · all recorded dates</div>
+        </div>
+        <div className="metric-card accent-credit">
+          <div className="metric-header"><span className="metric-label">Card dues</span><CreditCard size={17} /></div>
+          <div className="metric-value">{formatPaiseToRupees(creditDebtPaise)}</div>
+          <div className="metric-subtext">Recorded outstanding credit balance</div>
+        </div>
+        <div className="metric-card accent-budget">
+          <div className="metric-header"><span className="metric-label">Budget left</span><Target size={17} /></div>
+          <div className="metric-value">{formatPaiseToRupees(remainingPaise)}</div>
+          <div className="metric-subtext">{budgets.length > 0 ? `Of ${formatPaiseToRupees(allocatedPaise)} allocated` : "Set a category limit to get started"}</div>
         </div>
       </div>
 
-      {/* 6. Accounts Breakdown & Category Spending Allocation */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "20px" }}>
-        {/* Category Allocation Progress Bars */}
-        <div className="panel-card">
-          <div className="panel-header">
-            <div className="panel-title">
-              <span>Spending by Category</span>
-            </div>
-            <button 
-              className="btn-secondary" 
-              style={{ fontSize: "11px", padding: "4px 8px" }}
-              onClick={onNavigateToTransactions}
-            >
-              Filter in Ledger
-            </button>
-          </div>
+      {(alerts.length > 0 || deficit) && (
+        <div className="budget-alert">
+          <AlertTriangle size={20} />
+          <div><strong>{deficit ? "This month's spending is above income" : `${alerts.length} ${alerts.length === 1 ? "budget needs" : "budgets need"} a closer look`}</strong>
+            <p>{alerts.length > 0 ? alerts.map((b) => b.category).join(", ") : "Review the ledger to understand your monthly deficit."}</p></div>
+          <button className="btn-secondary" onClick={alerts.length > 0 ? onNavigateToBudgets : onNavigateToTransactions}>
+            {alerts.length > 0 ? "Review budgets" : "Review ledger"}<ArrowRight size={14} />
+          </button>
+        </div>
+      )}
 
+      <div className="dashboard-detail-grid">
+        <section className="panel-card spending-panel">
+          <div className="panel-header"><h3 className="panel-title">Where your money went</h3><span className="panel-caption">This month</span></div>
           {categoryBreakdown.length === 0 ? (
-            <div style={{ color: "var(--text-muted)", fontSize: "12.5px", padding: "16px 0" }}>
-              No spending recorded yet. Click &quot;Add Transaction&quot; to begin.
-            </div>
+            <div className="empty-state"><PiggyBank size={28} /><h3>No spending recorded</h3><p>Your category breakdown will appear here.</p></div>
           ) : (
-            <div>
-              {categoryBreakdown.map((cat) => (
-                <div key={cat.name} className="category-progress-item">
-                  <div className="category-progress-header">
-                    <div className="category-name-group">
-                      <div className="category-color-dot" style={{ background: cat.color }} />
-                      <span>{cat.name}</span>
+            <>
+              <div className="spending-overview">
+                <div className="spending-ring" role="img" aria-label="Expense distribution by category" style={{ background: `conic-gradient(${ringSegments})` }}>
+                  <div><span>SPENT</span><strong>{formatPaiseToRupees(summary.totalOutflowPaise)}</strong></div>
+                </div>
+                <div className="spending-insight"><span className="eyebrow">TOP CATEGORY</span>
+                  <h4>{categoryBreakdown[0].name}</h4><p>{categoryBreakdown[0].pct.toFixed(1)}% of monthly spending</p>
+                  <strong className="font-mono">{formatPaiseToRupees(categoryBreakdown[0].spentPaise)}</strong>
+                </div>
+              </div>
+              <div className="category-list">
+                {categoryBreakdown.map((category) => (
+                  <div key={category.name} className="category-progress-item">
+                    <div className="category-progress-header">
+                      <div className="category-name-group"><span className="category-color-dot" style={{ background: category.color }} />{category.name}</div>
+                      <span className="font-mono">{formatPaiseToRupees(category.spentPaise)} <small>{category.pct.toFixed(1)}%</small></span>
                     </div>
-                    <span className="font-mono" style={{ color: "var(--text-secondary)" }}>
-                      {formatPaiseToRupees(cat.spentPaise)} • {cat.pct}%
-                    </span>
+                    <div className="progress-track"><div className="progress-bar" style={{ width: `${category.pct}%`, background: category.color }} /></div>
                   </div>
-                  <div className="progress-track">
-                    <div 
-                      className="progress-bar" 
-                      style={{ width: `${Math.min(100, cat.pct)}%`, background: cat.color }} 
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
-        </div>
+        </section>
 
-        {/* Capital & Amount Overview */}
-        <div className="panel-card">
-          <div className="panel-header">
-            <div className="panel-title">
-              <Wallet size={16} color="var(--brand-indigo)" />
-              <span>Capital & Amount Overview</span>
-            </div>
-            <span className="badge-tag badge-income" style={{ fontSize: "10.5px" }}>Reconciled</span>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div 
-              style={{ 
-                padding: "12px 14px", 
-                background: "var(--bg-card-subtle)", 
-                border: "1px solid var(--border-subtle)", 
-                borderRadius: "var(--radius-md)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
-            >
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-main)" }}>Available Capital (Amount)</div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  Primary balance ready for allocation
+        <section className="panel-card">
+          <div className="panel-header"><h3 className="panel-title">Budget check-in</h3>
+            <button className="text-button" onClick={onNavigateToBudgets}>Manage <ArrowRight size={14} /></button></div>
+          {budgetRows.length === 0 ? (
+            <div className="empty-state"><Target size={28} /><h3>Give your spending a plan</h3><p>Add your first category budget.</p>
+              <button className="btn-secondary" onClick={onNavigateToBudgets}>Set a budget</button></div>
+          ) : budgetRows.slice(0, 5).map((budget) => {
+            const status = budget.isOver ? "danger" : budget.isAtLimit || budget.isNear ? "warning" : "healthy";
+            return (
+              <div className={`budget-check-row ${status}`} key={budget.category}>
+                <div className="budget-check-header"><strong>{budget.category}</strong>
+                  <span>{budget.isOver ? `${formatPaiseToRupees(budget.spent - budget.limitPaise)} over`
+                    : budget.isAtLimit ? "Limit reached" : `${formatPaiseToRupees(budget.remainingPaise)} left`}</span></div>
+                <div className="progress-track" role="progressbar" aria-label={`${budget.category} budget used`}
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, budget.pct)}
+                  aria-valuetext={`${budget.pct.toFixed(1)}% used`}>
+                  <div className="progress-bar" style={{ width: `${Math.min(100, budget.pct)}%` }} />
                 </div>
+                <small>{formatPaiseToRupees(budget.spent)} of {formatPaiseToRupees(budget.limitPaise)}</small>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="font-mono" style={{ 
-                  fontSize: "15px", 
-                  fontWeight: 700, 
-                  color: "var(--text-main)" 
-                }}>
-                  {formatPaiseToRupees(netCashPositionPaise)}
-                </div>
-                <div style={{ fontSize: "10px", color: "var(--income-emerald)" }}>
-                  Live & Unencumbered
-                </div>
-              </div>
-            </div>
-
-            <div 
-              style={{ 
-                padding: "12px 14px", 
-                background: "var(--bg-card-subtle)", 
-                border: "1px solid var(--border-subtle)", 
-                borderRadius: "var(--radius-md)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
-            >
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-main)" }}>Monthly Net Surplus</div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  Inflows minus total spending
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="font-mono" style={{ 
-                  fontSize: "14px", 
-                  fontWeight: 700, 
-                  color: summary.netSavingsPaise >= 0 ? "var(--income-emerald)" : "var(--expense-rose)" 
-                }}>
-                  {summary.netSavingsPaise >= 0 ? "+" : ""}{formatPaiseToRupees(summary.netSavingsPaise)}
-                </div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                  {summary.savingsRatePercentage.toFixed(0)}% retention
-                </div>
-              </div>
-            </div>
-
-            <div 
-              style={{ 
-                padding: "12px 14px", 
-                background: "var(--bg-card-subtle)", 
-                border: "1px solid var(--border-subtle)", 
-                borderRadius: "var(--radius-md)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
-            >
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-main)" }}>Fixed Commitments</div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  Recurring monthly obligations
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="font-mono" style={{ 
-                  fontSize: "14px", 
-                  fontWeight: 700, 
-                  color: "var(--text-secondary)" 
-                }}>
-                  {formatPaiseToRupees(summary.recurringCommitmentPaise)}
-                </div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                  Pre-allocated
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            );
+          })}
+          <div className="recurring-note"><span>Recurring spending recorded</span><strong className="font-mono">{formatPaiseToRupees(summary.recurringCommitmentPaise)}</strong></div>
+          <p className="panel-note">These bills are already included in money out, not deducted again.</p>
+        </section>
       </div>
+
+      <section className="panel-card accounts-panel">
+        <div className="panel-header"><div><h3 className="panel-title">Your accounts</h3><p className="panel-note">Current balances across all recorded dates, independent of the selected month.</p></div>
+          <div className="account-net"><span>Net position</span><strong className="font-mono">{formatPaiseToRupees(netCashPositionPaise)}</strong></div></div>
+        <div className="account-card-grid">
+          {accounts.map((account) => {
+            const Icon = account.type === "credit" ? CreditCard : account.type === "bank" ? Landmark : Banknote;
+            const balance = accountBalances[account.id];
+            return <div className={`account-summary ${account.type}`} key={account.id}>
+              <div className="account-summary-title"><Icon size={18} /><span>{account.name}</span></div>
+              <strong className="font-mono">{formatPaiseToRupees(account.type === "credit" ? Math.max(0, -balance) : balance)}</strong>
+              <small>{account.type === "credit" ? balance > 0 ? `${formatPaiseToRupees(balance)} card credit` : "Outstanding dues" : account.type === "bank" ? "Bank balance" : "Cash in hand"}</small>
+            </div>;
+          })}
+          {accounts.length === 0 && <p className="panel-note">Add an account in Settings to start tracking balances.</p>}
+        </div>
+      </section>
     </div>
   );
-};
+}

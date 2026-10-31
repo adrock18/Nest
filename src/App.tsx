@@ -13,23 +13,14 @@ import {
   Transaction,
   Category,
   CategoryBudget,
-  MonthlyFinancialSummary,
   Account,
   Trip,
   TripExpense
 } from "./types";
 import { api } from "./services/api";
-
-const CATEGORY_COLORS: Record<string, string> = {
-  "Rent": "#0ea5e9",
-  "Groceries": "#10b981",
-  "Dining Out": "#f59e0b",
-  "Fuel": "#8b5cf6",
-  "Utilities": "#ec4899",
-  "Subscriptions": "#f43f5e",
-  "Healthcare": "#14b8a6",
-  "Other": "#64748b"
-};
+import { calculateMonthlySummary, calculateAccountBalances } from "./utils/finance";
+import { getLocalDate } from "./utils/dates";
+import { addPaise } from "./utils/money";
 
 function getCurrentYM(): string {
   const now = new Date();
@@ -43,13 +34,15 @@ export const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [allTransactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tripExpenses, setTripExpenses] = useState<TripExpense[]>([]);
   const [dbPath, setDbPath] = useState("%LOCALAPPDATA%\\Nest\\nest.db");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentYM);
 
   // Theme State
@@ -73,7 +66,7 @@ export const App: React.FC = () => {
       setIsLoading(true);
       const [accs, txs, bdgs, path, trps, trExp, cats] = await Promise.all([
         api.getAccounts(),
-        api.getTransactions(selectedMonth),
+        api.getTransactions(),
         api.getBudgets(),
         api.getDatabasePath(),
         api.getTrips(),
@@ -87,29 +80,26 @@ export const App: React.FC = () => {
       setTrips(trps);
       setTripExpenses(trExp);
       setCategories(cats);
+      setLoadError("");
     } catch (err) {
       console.error("Failed to hydrate data from storage:", err);
+      setLoadError(String(err));
     } finally {
       setIsLoading(false);
     }
-  }, [selectedMonth]);
+  }, []);
 
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Reload transactions when month changes (after initial load)
-  useEffect(() => {
-    if (!isLoading) {
-      api.getTransactions(selectedMonth).then(setTransactions).catch(console.error);
-    }
-  }, [selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Global Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isAddModalOpen || isAccountModalOpen) return;
       const activeTag = (document.activeElement?.tagName || "").toLowerCase();
-      if (activeTag === "input" || activeTag === "textarea" || activeTag === "select") {
+      if (activeTag === "input" || activeTag === "textarea" || activeTag === "select" ||
+          (document.activeElement instanceof HTMLElement && document.activeElement.isContentEditable)) {
         if (e.key === "Escape") {
           setIsAddModalOpen(false);
           setIsAccountModalOpen(false);
@@ -148,55 +138,15 @@ export const App: React.FC = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isAddModalOpen, isAccountModalOpen]);
 
   // Financial Calculations (Memoized)
-  const summary: MonthlyFinancialSummary = useMemo(() => {
-    let inflow = 0;
-    let outflow = 0;
-    let recurringCommitment = 0;
-
-    for (const tx of transactions) {
-      if (tx.type === "income") {
-        inflow += tx.amountPaise;
-      } else {
-        outflow += tx.amountPaise;
-        if (tx.isRecurring) {
-          recurringCommitment += tx.amountPaise;
-        }
-      }
-    }
-
-    const netSavings = inflow - outflow;
-    const savingsRate = inflow > 0 ? (netSavings / inflow) * 100 : 0;
-
-    return {
-      totalInflowPaise: inflow,
-      totalOutflowPaise: outflow,
-      netSavingsPaise: netSavings,
-      savingsRatePercentage: Math.max(0, savingsRate),
-      recurringCommitmentPaise: recurringCommitment
-    };
-  }, [transactions]);
+  const transactions = useMemo(() => allTransactions.filter((tx) => tx.date.startsWith(selectedMonth)),
+    [allTransactions, selectedMonth]);
+  const summary = useMemo(() => calculateMonthlySummary(transactions), [transactions]);
 
   // Dynamic Account Balances
-  const accountBalances = useMemo(() => {
-    const balances: Record<string, number> = {};
-    for (const acc of accounts) {
-      balances[acc.id] = acc.startingBalancePaise;
-    }
-
-    for (const tx of transactions) {
-      if (balances[tx.accountId] === undefined) continue;
-      if (tx.type === "income") {
-        balances[tx.accountId] += tx.amountPaise;
-      } else {
-        balances[tx.accountId] -= tx.amountPaise;
-      }
-    }
-
-    return balances;
-  }, [accounts, transactions]);
+  const accountBalances = useMemo(() => calculateAccountBalances(accounts, allTransactions), [accounts, allTransactions]);
 
   // Dynamic Category Spending Breakdown
   const categoryBreakdown = useMemo(() => {
@@ -205,8 +155,8 @@ export const App: React.FC = () => {
 
     for (const tx of transactions) {
       if (tx.type === "expense") {
-        expensesByCategory[tx.category] = (expensesByCategory[tx.category] || 0) + tx.amountPaise;
-        totalExpense += tx.amountPaise;
+        expensesByCategory[tx.category] = addPaise(expensesByCategory[tx.category] || 0, tx.amountPaise);
+        totalExpense = addPaise(totalExpense, tx.amountPaise);
       }
     }
 
@@ -216,49 +166,44 @@ export const App: React.FC = () => {
       .map(([name, spentPaise]) => ({
         name,
         spentPaise,
-        pct: Math.round((spentPaise / totalExpense) * 100),
-        color: CATEGORY_COLORS[name] || "#38bdf8"
+        pct: spentPaise / totalExpense * 100,
+        color: categories.find((c) => c.name === name)?.color || "#64748b"
       }))
       .sort((a, b) => b.spentPaise - a.spentPaise);
-  }, [transactions]);
+  }, [transactions, categories]);
 
   // === Transaction Actions ===
   const handleAddTransaction = async (newTx: Omit<Transaction, "id">) => {
     const created: Transaction = {
       ...newTx,
-      id: `tx-${Date.now()}`
+      id: `tx-${crypto.randomUUID()}`
     };
     try {
-      await api.createTransaction(created);
-      // Re-filter: only add to list if it matches the current month
-      if (created.date.startsWith(selectedMonth)) {
-        setTransactions((prev) => [created, ...prev]);
-      }
+      const saved = await api.createTransaction(created);
+      setTransactions((prev) => [saved, ...prev]);
     } catch (err) {
       console.error("Failed to create transaction:", err);
+      throw err;
     }
   };
 
   const handleEditTransaction = async (updated: Transaction) => {
     try {
-      await api.updateTransaction(updated);
-      if (updated.date.startsWith(selectedMonth)) {
-        setTransactions((prev) => prev.map((tx) => (tx.id === updated.id ? updated : tx)));
-      } else {
-        // Moved to a different month — remove from current view
-        setTransactions((prev) => prev.filter((tx) => tx.id !== updated.id));
-      }
+      if (!await api.updateTransaction(updated)) throw new Error("Transaction no longer exists.");
+      setTransactions((prev) => prev.map((tx) => (tx.id === updated.id ? updated : tx)));
     } catch (err) {
       console.error("Failed to update transaction:", err);
+      throw err;
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
     try {
-      await api.deleteTransaction(id);
+      if (!await api.deleteTransaction(id)) throw new Error("Transaction no longer exists.");
       setTransactions((prev) => prev.filter((tx) => tx.id !== id));
     } catch (err) {
       console.error("Failed to delete transaction:", err);
+      setActionError(`Could not delete transaction: ${String(err)}`);
     }
   };
 
@@ -280,15 +225,17 @@ export const App: React.FC = () => {
       });
     } catch (err) {
       console.error("Failed to save account:", err);
+      throw err;
     }
   };
 
   const handleDeleteAccount = async (id: string) => {
     try {
-      await api.deleteAccount(id);
+      if (!await api.deleteAccount(id)) throw new Error("Account no longer exists.");
       setAccounts((prev) => prev.filter((a) => a.id !== id));
     } catch (err) {
       console.error("Failed to delete account:", err);
+      setActionError(`Could not delete account: ${String(err)}`);
     }
   };
 
@@ -305,6 +252,7 @@ export const App: React.FC = () => {
       });
     } catch (err) {
       console.error("Failed to set budget:", err);
+      throw err;
     }
   };
 
@@ -315,6 +263,7 @@ export const App: React.FC = () => {
       setCategories((prev) => [...prev, category]);
     } catch (err) {
       console.error("Failed to create category:", err);
+      throw err;
     }
   };
 
@@ -323,7 +272,7 @@ export const App: React.FC = () => {
     const created: Trip = {
       ...newTripData,
       id: `trip-${Date.now()}`,
-      createdAt: new Date().toISOString().split("T")[0]
+      createdAt: getLocalDate()
     };
     try {
       await api.createTrip(created);
@@ -394,6 +343,17 @@ export const App: React.FC = () => {
     );
   }
 
+  if (loadError) {
+    return (
+      <main className="workspace-load-error">
+        <h1>Unable to open your workspace</h1>
+        <p>Your data has not been replaced. Resolve the storage issue and try again.</p>
+        <p className="form-error" role="alert">{loadError}</p>
+        <button className="btn-primary" onClick={loadInitialData}>Try again</button>
+      </main>
+    );
+  }
+
   return (
     <div className="app-layout">
       {/* Navigation Sidebar */}
@@ -415,6 +375,13 @@ export const App: React.FC = () => {
           onChangeMonth={setSelectedMonth}
         />
 
+        {actionError && (
+          <div className="workspace-alert" role="alert">
+            <span>{actionError}</span>
+            <button className="btn-secondary" onClick={() => setActionError("")}>Dismiss</button>
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <DashboardView
             summary={summary}
@@ -422,6 +389,10 @@ export const App: React.FC = () => {
             budgets={budgets}
             accounts={accounts}
             accountBalances={accountBalances}
+            selectedMonth={selectedMonth}
+            transactionCount={transactions.length}
+            onOpenAddTransaction={() => { setEditingTransaction(null); setIsAddModalOpen(true); }}
+            onNavigateToBudgets={() => setActiveTab("budgets")}
             onNavigateToTransactions={() => setActiveTab("transactions")}
           />
         )}
@@ -461,10 +432,13 @@ export const App: React.FC = () => {
 
         {activeTab === "settings" && (
           <SettingsView
-            transactions={transactions}
+            transactions={allTransactions}
             accounts={accounts}
             budgets={budgets}
+            categories={categories}
             databasePath={dbPath}
+            trips={trips}
+            tripExpenses={tripExpenses}
             onAddAccount={() => { setEditingAccount(null); setIsAccountModalOpen(true); }}
             onEditAccount={(acc) => { setEditingAccount(acc); setIsAccountModalOpen(true); }}
             onDeleteAccount={handleDeleteAccount}
@@ -473,7 +447,7 @@ export const App: React.FC = () => {
       </div>
 
       {/* Transaction Modal (Add / Edit) */}
-      <AddTransactionModal
+      {isAddModalOpen && <AddTransactionModal
         isOpen={isAddModalOpen}
         onClose={() => { setIsAddModalOpen(false); setEditingTransaction(null); }}
         accounts={accounts}
@@ -481,15 +455,15 @@ export const App: React.FC = () => {
         onAddTransaction={handleAddTransaction}
         onEditTransaction={handleEditTransaction}
         editingTransaction={editingTransaction}
-      />
+      />}
 
       {/* Account Modal (Add / Edit) */}
-      <AddAccountModal
+      {isAccountModalOpen && <AddAccountModal
         isOpen={isAccountModalOpen}
         onClose={() => { setIsAccountModalOpen(false); setEditingAccount(null); }}
         onSaveAccount={handleSaveAccount}
         editingAccount={editingAccount}
-      />
+      />}
     </div>
   );
 };

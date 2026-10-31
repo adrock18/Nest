@@ -1,9 +1,21 @@
 import type { Transaction, Account, CategoryBudget } from "../types/index.ts";
+import { calculateAccountBalances, calculateCashPosition, computeBudgetProgress } from "./finance.ts";
+import { addPaise, formatPaiseToDecimal } from "./money.ts";
 
 export interface AnalysisExportData {
   accounts: Account[];
   transactions: Transaction[];
   budgets: CategoryBudget[];
+}
+
+export function exportTransactionsToCsv(transactions: Transaction[], accountMap: Record<string, string>): string {
+  const quote = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const headers = ["ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)"];
+  return [headers.join(","), ...transactions.map((tx) => [
+    quote(tx.id), quote(tx.date), quote(tx.type), quote(accountMap[tx.accountId] || tx.accountId),
+    quote(tx.category), quote(tx.tags.join(" ")), tx.isRecurring ? "YES" : "NO",
+    quote(tx.notes), formatPaiseToDecimal(tx.amountPaise), String(tx.amountPaise)
+  ].join(","))].join("\n");
 }
 
 export function generateFinancialAnalysis(data: AnalysisExportData) {
@@ -24,59 +36,49 @@ export function generateFinancialAnalysis(data: AnalysisExportData) {
 
   for (const t of safeTransactions) {
     if (t.type === "income") {
-      totalInflowPaise += t.amountPaise;
+      totalInflowPaise = addPaise(totalInflowPaise, t.amountPaise);
     } else {
-      totalOutflowPaise += t.amountPaise;
+      totalOutflowPaise = addPaise(totalOutflowPaise, t.amountPaise);
       if (t.isRecurring) {
-        recurringPaise += t.amountPaise;
+        recurringPaise = addPaise(recurringPaise, t.amountPaise);
       }
     }
   }
 
-  const netSavingsPaise = totalInflowPaise - totalOutflowPaise;
+  const netSavingsPaise = addPaise(totalInflowPaise, -totalOutflowPaise);
   const savingsRatePct = totalInflowPaise > 0 
-    ? Math.max(0, (netSavingsPaise / totalInflowPaise) * 100)
+    ? (netSavingsPaise / totalInflowPaise) * 100
     : 0;
 
   // Account Balances
   const accountBalances: Record<string, { starting: number; inflow: number; outflow: number; current: number }> = {};
+  const balances = calculateAccountBalances(safeAccounts, safeTransactions);
   for (const a of safeAccounts) {
     accountBalances[a.id] = {
       starting: a.startingBalancePaise,
       inflow: 0,
       outflow: 0,
-      current: a.startingBalancePaise
+      current: balances[a.id]
     };
   }
 
   for (const t of safeTransactions) {
     if (!accountBalances[t.accountId]) continue;
     if (t.type === "income") {
-      accountBalances[t.accountId].inflow += t.amountPaise;
-      accountBalances[t.accountId].current += t.amountPaise;
+      accountBalances[t.accountId].inflow = addPaise(accountBalances[t.accountId].inflow, t.amountPaise);
     } else {
-      accountBalances[t.accountId].outflow += t.amountPaise;
-      accountBalances[t.accountId].current -= t.amountPaise;
+      accountBalances[t.accountId].outflow = addPaise(accountBalances[t.accountId].outflow, t.amountPaise);
     }
   }
 
   // Liquid Cash vs Liabilities
-  let liquidCashPaise = 0;
-  let creditDebtPaise = 0;
-  for (const a of safeAccounts) {
-    const bal = accountBalances[a.id]?.current ?? a.startingBalancePaise;
-    if (a.type === "credit") {
-      creditDebtPaise += Math.abs(bal);
-    } else {
-      liquidCashPaise += Math.max(0, bal);
-    }
-  }
+  const { liquidCashPaise, creditDebtPaise } = calculateCashPosition(safeAccounts, balances);
 
   // Category Breakdown
   const categorySpent: Record<string, number> = {};
   for (const t of safeTransactions) {
     if (t.type === "expense") {
-      categorySpent[t.category] = (categorySpent[t.category] || 0) + t.amountPaise;
+      categorySpent[t.category] = addPaise(categorySpent[t.category] || 0, t.amountPaise);
     }
   }
 
@@ -102,7 +104,7 @@ export function buildAnalysisSheet(data: AnalysisExportData, delimiter: "," | "\
     }
     return `"${(str || "").replace(/"/g, '""')}"`;
   };
-  const fmtInr = (paise: number) => (paise / 100).toFixed(2);
+  const fmtInr = formatPaiseToDecimal;
 
   const analysis = generateFinancialAnalysis(data);
   const safeBudgets = data.budgets || [];
@@ -131,14 +133,15 @@ export function buildAnalysisSheet(data: AnalysisExportData, delimiter: "," | "\
   for (const b of safeBudgets) {
     const spent = analysis.categorySpent[b.category] || 0;
     const pct = b.limitPaise > 0 ? ((spent / b.limitPaise) * 100).toFixed(1) : (spent > 0 ? "100.0" : "0.0");
-    const variance = (b.limitPaise - spent) / 100;
-    const status = spent > b.limitPaise ? "Over Limit" : Number(pct) >= 80 ? "Near Limit (80%+)" : "On Target";
+    const variance = formatPaiseToDecimal(b.limitPaise - spent);
+    const progress = computeBudgetProgress(spent, b.limitPaise);
+    const status = progress.isOver ? "Over Limit" : progress.isAtLimit ? "At Limit" : progress.isNear ? "Near Limit (80%+)" : "On Target";
     lines.push([
       q(b.category),
       fmtInr(spent),
       fmtInr(b.limitPaise),
       `${pct}%`,
-      variance.toFixed(2),
+      variance,
       q(status)
     ].join(d));
   }

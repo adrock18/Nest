@@ -9,6 +9,7 @@ import {
   Sun,
   Moon
 } from "lucide-react";
+import { isTauriDesktop } from "../services/api";
 
 export type NavTab = "dashboard" | "transactions" | "budgets" | "travel" | "settings";
 
@@ -40,7 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: "budgets" as NavTab,
-      label: "Monthly Budgets",
+      label: "Budgets",
       icon: Target,
       elementId: "nav-tab-budgets"
     },
@@ -52,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: "settings" as NavTab,
-      label: "Settings & Backups",
+      label: "Settings",
       icon: Settings,
       elementId: "nav-tab-settings"
     }
@@ -86,9 +87,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               id={item.elementId}
               className={`nav-button ${isActive ? "active" : ""}`}
               onClick={() => onSelectTab(item.id)}
+              aria-current={isActive ? "page" : undefined}
+              title={item.label}
             >
               <Icon size={16} className="nav-icon" />
-              <span style={{ flex: 1 }}>{item.label}</span>
+              <span className="nav-label" style={{ flex: 1 }}>{item.label}</span>
               <span className="kbd-chip">{shortcutKey}</span>
             </button>
           );
@@ -121,10 +124,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Local-First Indicator */}
-        <div className="status-badge" title="All data is stored exclusively in your local SQLite database">
+        <div className="status-badge" title={isTauriDesktop() ? "Data is stored in your local SQLite database" : "Browser preview uses localStorage, not the desktop database"}>
           <div className="status-indicator-dot" />
           <div className="status-text">
-            <span>Offline & Private</span>
+            <span>{isTauriDesktop() ? "Offline & Private" : "Browser Preview"}</span>
           </div>
         </div>
       </div>

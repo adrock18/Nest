@@ -49,8 +49,9 @@
 * **Copilot & Monarch-Inspired Design System**:
   * Implemented using pure, high-performance **Vanilla CSS** (`src/styles/theme.css`).
   * **Dual-Theme Engine**:
-    * **Obsidian Dark Mode**: Layered surfaces (`#080c15` canvas, `#131b2e` elevated cards), 1px translucent borders, and ambient shadows.
-    * **Alabaster Light Mode**: Low-glare cool canvas (`#f4f6fa`), pure white cards (`#ffffff`), and deep charcoal typography (`#0f172a`).
+    * **Obsidian Dark Mode**: Layered graphite surfaces (`#0d1117` canvas, `#131822` elevated surfaces), translucent borders, and ambient shadows.
+    * **Alabaster Light Mode**: Low-glare canvas (`#f9fafb`), white cards (`#ffffff`), and charcoal typography (`#111827`).
+    * **Expressive Dashboard**: Emerald-to-blue monthly cash-flow hero, semantic income/expense colors, spending distribution ring, budget check-ins, and account cards. Motion respects system preferences.
     * **Theme Persistence**: Instant toggle stored in local configuration.
   * **Typography**: Professional typography via **Inter** (clean UI labels) and **JetBrains Mono** (monospace tabular figures for currency).
 * **Navigation Architecture**:
@@ -67,7 +68,9 @@
   * **Cash in Hand** (e.g. Physical wallet, petty cash)
 * **Live Balance Computation**:
   * Derives balances dynamically from initial starting balances combined with recorded inflows and outflows.
-  * Separates **Liquid Cash Position** (Bank + Cash) from **Credit Liabilities** (Credit card dues).
+  * Separates **Liquid Cash Position** (Bank + Cash, including overdrafts) from **Credit Liabilities** (credit card dues).
+  * Balances use all recorded dates, independent of the selected month.
+  * Credit starting amounts represent positive outstanding debt; the signed ledger starts negative, expenses increase debt, and income reduces it. A credit surplus is not counted as a liability.
 * **Account Attribution**: Every transaction is explicitly tagged with the originating account.
 
 ---
@@ -97,10 +100,12 @@
   * Seeded with common everyday household categories: *Rent, Groceries, Dining Out, Utilities, Fuel, Subscriptions, Healthcare, Salary, Freelance, Other*.
 * **Monthly Allocation Ceilings**:
   * Set spending caps per category (e.g. *Groceries: ₹10,000 / month*).
+  * Current implementation uses recurring monthly templates, not independent per-month budget records.
 * **Dynamic Multi-Threshold Warning Engine**:
   * **Normal / On Target (<80% used)**: Displayed with clean Emerald progress indicators.
-  * **Approaching Limit (80%–99% used)**: Amber warning indicator alerting the user that the budget ceiling is near.
-  * **Over Budget (≥100% used)**: Prominent Rose alert badge detailing the exact overspend amount in rupees.
+  * **Approaching Limit (80% to below 100% used)**: Amber warning, based on actual utilization rather than rounded display values.
+  * **Limit Reached (exactly 100%)**: Explicit reached-limit status, with no false overspend amount.
+  * **Over Budget (>100%)**: Rose alert with the exact overspend and actual utilization percentage.
 
 ---
 
@@ -111,7 +116,7 @@
   3. **Net Savings**: Inflow − Outflow (highlighted in Cyan for surplus, Rose for deficit).
   4. **Savings Rate %**: Computed as `(Net Savings / Total Inflow) * 100`, providing an objective indicator of financial health.
 * **Account Liquidity Row**: Quick-glance cards showing current liquid cash vs. credit liabilities.
-* **Fixed Commitments & Stability**: Calculates the total sum of all recurring fixed commitments (Rent, Wi-Fi, Subscriptions) and evaluates liquid cash buffer coverage.
+* **Fixed Commitments**: Shows recorded recurring expense totals, already included in spending. Does not infer unpaid future bills, forecast a runway, or claim a guaranteed safe-to-spend amount.
 * **Category Allocation Breakdown**: Visual horizontal distribution bars displaying the exact percentage of total outflow consumed by each category.
 
 ---
@@ -123,10 +128,11 @@
   * Schema versioning tracked via `PRAGMA user_version = 1`.
   * Atomic transactions for multi-record operations.
 * **Point-in-Time SQLite Backup**:
-  * Generates an atomic, verified snapshot of the active database using SQLite's native `VACUUM INTO` engine.
+  * Generates a snapshot using SQLite's native `VACUUM INTO` engine with a bound destination and a read-only `quick_check`.
 * **Data Portability (Zero Silos)**:
-  * **CSV Ledger Export**: Generates a standard, unencrypted `.csv` file containing complete transaction records, accounts, tags, and amounts (in both INR and Paise) compatible with Excel and Google Sheets.
-  * **JSON Snapshot Export**: Generates a portable `.json` snapshot of all accounts, budgets, and transactions.
+  * **CSV Ledger Export**: Includes all recorded months, accounts, tags, and amounts (INR and Paise), with text fields escaped for CSV.
+  * **JSON Snapshot Export**: Includes all accounts, budgets, transactions, categories, and existing travel records. Snapshot export does not imply implemented restore support.
+  * Browser preview uses separate localStorage and cannot produce SQLite backups. Corrupt or unwritable storage surfaces an error rather than silently loading sample data.
 
 ---
 

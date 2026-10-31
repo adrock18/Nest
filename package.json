@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node tests/edge_cases.test.ts",
+    "test": "node tests/edge_cases.test.ts && node tests/v1_api.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

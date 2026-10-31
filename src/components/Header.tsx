@@ -1,6 +1,7 @@
 import React from "react";
 import { Calendar, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { NavTab } from "./Sidebar";
+import { formatMonthLabel } from "../utils/dates";
 
 interface HeaderProps {
   activeTab: NavTab;
@@ -9,17 +10,6 @@ interface HeaderProps {
   onToggleTheme?: () => void;
   selectedMonth: string; // "YYYY-MM"
   onChangeMonth: (month: string) => void;
-}
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
-];
-
-function formatMonthLabel(ym: string): string {
-  const [yearStr, monthStr] = ym.split("-");
-  const monthIdx = parseInt(monthStr, 10) - 1;
-  return `${MONTH_NAMES[monthIdx] ?? monthStr} ${yearStr}`;
 }
 
 function shiftMonth(ym: string, delta: number): string {
@@ -37,11 +27,11 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeMonth
 }) => {
   const titles: Record<NavTab, string> = {
-    dashboard: "Financial Command Center",
-    transactions: "Transaction Workspace",
-    budgets: "Monthly Category Budgets",
-    travel: "Travel & Trip Workspace",
-    settings: "Settings & Local Data Safety"
+    dashboard: "Overview",
+    transactions: "Transactions",
+    budgets: "Budgets",
+    travel: "Travel",
+    settings: "Settings & backups"
   };
 
   const now = new Date();
@@ -70,10 +60,11 @@ export const Header: React.FC<HeaderProps> = ({
               borderRadius: "4px"
             }}
             title="Previous month"
+            aria-label="Previous month"
           >
             <ChevronLeft size={16} />
           </button>
-          <Calendar size={14} color="var(--brand-indigo)" />
+          <Calendar size={14} color="var(--brand-nordic)" />
           <span style={{ minWidth: "130px", textAlign: "center" }}>{formatMonthLabel(selectedMonth)}</span>
           <button
             onClick={() => { if (!isCurrentMonth) onChangeMonth(shiftMonth(selectedMonth, 1)); }}
@@ -88,10 +79,13 @@ export const Header: React.FC<HeaderProps> = ({
               borderRadius: "4px"
             }}
             title={isCurrentMonth ? "Current month" : "Next month"}
+            aria-label="Next month"
+            disabled={isCurrentMonth}
           >
             <ChevronRight size={16} />
           </button>
         </div>
+        {!isCurrentMonth && <button className="text-button month-today" onClick={() => onChangeMonth(currentYM)}>This month</button>}
 
         {/* Quick Add Button */}
         <button

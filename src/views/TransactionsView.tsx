@@ -13,13 +13,15 @@ interface TransactionsViewProps {
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
-  accounts: _accounts,
+  accounts,
   onDeleteTransaction,
   onOpenAddTransaction,
   onEditTransaction
 }) => {
   const [filterType, setFilterType] = useState<"all" | "expense" | "income" | "recurring">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<"newest" | "oldest" | "largest">("newest");
+  const accountNames = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
 
   const safeTransactions = transactions || [];
 
@@ -28,29 +30,37 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     if (filterType === "income" && tx.type !== "income") return false;
     if (filterType === "recurring" && !tx.isRecurring) return false;
 
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
       const matchNote = (tx.notes || "").toLowerCase().includes(q);
       const matchCat = (tx.category || "").toLowerCase().includes(q);
       const matchTag = (tx.tags || []).some((tag) => tag.toLowerCase().includes(q));
-      if (!matchNote && !matchCat && !matchTag) return false;
+      const matchAccount = (accountNames[tx.accountId] || "").toLowerCase().includes(q);
+      if (!matchNote && !matchCat && !matchTag && !matchAccount) return false;
     }
     return true;
-  });
+  }).sort((a, b) => sort === "largest" ? b.amountPaise - a.amountPaise || b.date.localeCompare(a.date)
+    : sort === "oldest" ? a.date.localeCompare(b.date) || a.id.localeCompare(b.id)
+    : b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
 
   return (
     <div className="view-content-wrapper">
+      <div className="view-heading">
+        <div><div className="eyebrow">EVERY ENTRY TELLS A STORY</div><h2>Your transactions</h2><p>Search and review the selected month's income and expenses.</p></div>
+        <span className="panel-caption">{filtered.length} of {safeTransactions.length} entries</span>
+      </div>
       {/* Search and Filters Toolbar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", gap: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div className="transactions-toolbar">
+        <div className="filter-group">
           {(["all", "expense", "income", "recurring"] as const).map((tab) => (
             <button
               key={tab}
+              aria-pressed={filterType === tab}
               id={`filter-tab-${tab}`}
               className={`btn-secondary ${filterType === tab ? "active" : ""}`}
               style={{
                 background: filterType === tab ? "var(--bg-card-hover)" : "var(--bg-surface)",
-                borderColor: filterType === tab ? "var(--accent-cyan)" : "var(--border-subtle)",
+                borderColor: filterType === tab ? "var(--brand-nordic)" : "var(--border-subtle)",
                 textTransform: "capitalize"
               }}
               onClick={() => setFilterType(tab)}
@@ -60,14 +70,15 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           ))}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div className="toolbar-actions">
           {/* Search Field */}
-          <div style={{ position: "relative", width: "280px" }}>
+          <div className="transaction-search">
             <Search size={15} color="var(--text-muted)" style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)" }} />
             <input
               type="text"
               id="input-search-transactions"
-              placeholder="Search notes, #tags, or categories..."
+              aria-label="Search transactions"
+              placeholder="Notes, accounts, categories, #tags..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -81,6 +92,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               }}
             />
           </div>
+          <select className="sort-select" aria-label="Sort transactions" value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="largest">Largest amount</option>
+          </select>
 
           <button className="btn-primary" onClick={onOpenAddTransaction}>
             <Plus size={15} />
@@ -92,8 +109,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       {/* Transactions Table Container */}
       <div className="data-table-container">
         {filtered.length === 0 ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
-            No transactions found matching your filter criteria.
+          <div className="empty-state">
+            <Search size={28} />
+            <h3>{safeTransactions.length === 0 ? "No entries this month" : "No matching transactions"}</h3>
+            <p>{safeTransactions.length === 0 ? "Add your first income or expense to get started." : "Try another search or reset the filters."}</p>
+            {safeTransactions.length === 0 ? <button className="btn-primary" onClick={onOpenAddTransaction}>Record transaction</button>
+              : <button className="btn-secondary" onClick={() => { setSearchQuery(""); setFilterType("all"); }}>Clear filters</button>}
           </div>
         ) : (
           <table className="data-table">
@@ -101,6 +122,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               <tr>
                 <th>Date</th>
                 <th>Flow</th>
+                <th>Account</th>
                 <th>Category & Tags</th>
                 <th>Notes / Merchant</th>
                 <th style={{ textAlign: "right" }}>Amount</th>
@@ -124,6 +146,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                       )}
                     </span>
                   </td>
+                  <td>{accountNames[tx.accountId] || tx.accountId}</td>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -166,6 +189,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         onClick={() => onEditTransaction(tx)}
                         style={{ padding: "4px 6px", background: "transparent", border: "none", color: "var(--accent-cyan)", cursor: "pointer" }}
                         title="Edit Transaction"
+                        aria-label={`Edit transaction ${tx.notes || tx.category}`}
                       >
                         <Pencil size={14} />
                       </button>
@@ -173,6 +197,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         onClick={() => onDeleteTransaction(tx.id)}
                         style={{ padding: "4px 6px", background: "transparent", border: "none", color: "var(--expense-rose)", cursor: "pointer" }}
                         title="Delete Transaction"
+                        aria-label={`Delete transaction ${tx.notes || tx.category}`}
                         id={`btn-delete-${tx.id}`}
                       >
                         <Trash2 size={14} />

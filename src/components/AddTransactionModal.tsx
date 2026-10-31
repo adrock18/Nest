@@ -2,14 +2,16 @@ import React, { useState, useEffect } from "react";
 import { X, Check, Repeat, Tag } from "lucide-react";
 import { FlowType, Transaction, Account, Category } from "../types";
 import { parseRupeesToPaise, formatPaiseToRupees } from "../utils/money";
+import { getLocalDate, isValidStrictCalendarDate } from "../utils/dates";
+import { Modal } from "./Modal";
 
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   accounts: Account[];
   categories: Category[];
-  onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
-  onEditTransaction?: (transaction: Transaction) => void;
+  onAddTransaction: (transaction: Omit<Transaction, "id">) => Promise<void>;
+  onEditTransaction?: (transaction: Transaction) => Promise<void>;
   editingTransaction?: Transaction | null;
 }
 
@@ -28,11 +30,12 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [amountInput, setAmountInput] = useState("");
   const [accountId, setAccountId] = useState(() => (accounts && accounts[0]?.id) || "acc-primary");
   const [category, setCategory] = useState("General Spending");
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(getLocalDate);
   const [notes, setNotes] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   // Populate form when editing
   useEffect(() => {
@@ -49,14 +52,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setType("expense");
       setAmountInput("");
       setAccountId((accounts && accounts[0]?.id) || "acc-primary");
-      setCategory("General Spending");
-      setDate(new Date().toISOString().split("T")[0]);
+      setCategory(categories.find((c) => !c.isIncome)?.name || "");
+      setDate(getLocalDate());
       setNotes("");
       setTagsInput("");
       setIsRecurring(false);
     }
     setErrorMessage("");
-  }, [editingTransaction, accounts]);
+  }, [editingTransaction, accounts, categories]);
 
   useEffect(() => {
     if (accounts && accounts.length > 0 && !accounts.some((a) => a.id === accountId)) {
@@ -69,26 +72,28 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const expenseCategories = categories.filter((c) => !c.isIncome);
   const incomeCategories = categories.filter((c) => c.isIncome);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     setErrorMessage("");
-
+    setIsSaving(true);
     try {
       const paise = parseRupeesToPaise(amountInput);
 
       // Parse tags
-      const parsedTags = tagsInput
+      const parsedTags = [...new Set(tagsInput
         .split(/[, ]+/)
         .map((t) => t.trim().replace(/^#+/, ""))
         .filter((t) => t.length > 0)
-        .map((t) => `#${t}`);
+        .map((t) => `#${t}`))];
 
-      const validDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().split("T")[0];
+      if (!isValidStrictCalendarDate(date)) throw new Error("Please enter a valid calendar date.");
+      if (!accounts.some((a) => a.id === accountId)) throw new Error("Add an account in Settings before recording a transaction.");
 
       if (isEditing && editingTransaction && onEditTransaction) {
-        onEditTransaction({
+        await onEditTransaction({
           ...editingTransaction,
-          date: validDate,
+          date,
           type,
           accountId,
           category,
@@ -98,8 +103,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           amountPaise: paise
         });
       } else {
-        onAddTransaction({
-          date: validDate,
+        await onAddTransaction({
+          date,
           type,
           accountId,
           category,
@@ -116,22 +121,15 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setTagsInput("");
       setIsRecurring(false);
       onClose();
-    } catch {
-      setErrorMessage("Please enter a valid positive number for amount (e.g. 250.50)");
+    } catch (error) {
+      setErrorMessage(String(error));
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div style={{
-      position: "fixed",
-      inset: 0,
-      backgroundColor: "rgba(0, 0, 0, 0.75)",
-      backdropFilter: "blur(6px)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 1000
-    }}>
+    <Modal title={isEditing ? "Edit Transaction" : "Record Transaction"} onClose={onClose} busy={isSaving}>
       <div style={{
         background: "var(--bg-surface)",
         border: "1px solid var(--border-medium)",
@@ -146,13 +144,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-main)" }}>
             {isEditing ? "Edit Transaction" : "Record Transaction"}
           </h2>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
+          <button onClick={onClose} disabled={isSaving} aria-label="Close transaction form" style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
             <X size={18} />
           </button>
         </div>
 
         {errorMessage && (
-          <div style={{
+          <div role="alert" style={{
             padding: "8px 12px",
             background: "var(--expense-bg)",
             border: "1px solid var(--expense-border)",
@@ -181,7 +179,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
               onClick={() => {
                 setType("expense");
-                if (incomeCategories.some((c) => c.name === category)) setCategory("General Spending");
+                setCategory(expenseCategories[0]?.name || "");
               }}
             >
               Spending
@@ -199,7 +197,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
               onClick={() => {
                 setType("income");
-                if (expenseCategories.some((c) => c.name === category)) setCategory("Salary");
+                setCategory(incomeCategories[0]?.name || "");
               }}
             >
               Income
@@ -215,6 +213,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               type="number"
               id="input-transaction-amount"
               step="0.01"
+              min="0.01"
+              aria-label="Amount in rupees"
               required
               autoFocus
               placeholder="0.00"
@@ -242,6 +242,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               </label>
               <select
                 id="select-transaction-account"
+                aria-label="Account"
+                required
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
                 style={{
@@ -267,6 +269,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               <input
                 type="date"
                 id="input-transaction-date"
+                aria-label="Calendar date"
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
@@ -291,6 +294,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </label>
             <select
               id="select-transaction-category"
+              aria-label="Category"
+              required
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               style={{
@@ -322,6 +327,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <input
               type="text"
               id="input-transaction-notes"
+              aria-label="Notes or merchant"
               placeholder="e.g. Swiggy, DMart, Rent transfer"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -345,6 +351,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <input
               type="text"
               id="input-transaction-tags"
+              aria-label="Tags"
               placeholder="e.g. #Work, #TaxDeductible, #Trip"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
@@ -385,16 +392,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Actions */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={isSaving}>
               Cancel
             </button>
-            <button type="submit" id="btn-submit-transaction" className="btn-primary">
+            <button type="submit" id="btn-submit-transaction" className="btn-primary" disabled={isSaving || accounts.length === 0}>
               <Check size={16} />
-              <span>{isEditing ? "Save Changes" : "Record Transaction"}</span>
+              <span>{isSaving ? "Saving..." : isEditing ? "Save Changes" : "Record Transaction"}</span>
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };

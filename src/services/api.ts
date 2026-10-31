@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Transaction, Account, Category, CategoryBudget, MonthlyFinancialSummary, Trip, TripExpense } from "../types";
+import type { Transaction, Account, Category, CategoryBudget, MonthlyFinancialSummary, Trip, TripExpense } from "../types/index.ts";
+import { calculateMonthlySummary } from "../utils/finance.ts";
+import { isValidStrictCalendarDate } from "../utils/dates.ts";
 
 // Check if running inside native Tauri desktop window
 export const isTauriDesktop = (): boolean => {
@@ -11,6 +13,7 @@ const STORAGE_KEYS = {
   ACCOUNTS: "nest_db_accounts",
   TRANSACTIONS: "nest_db_transactions",
   BUDGETS: "nest_db_budgets",
+  CATEGORIES: "nest_db_categories",
   TRIPS: "nest_db_trips",
   TRIP_EXPENSES: "nest_db_trip_expenses",
 };
@@ -196,17 +199,33 @@ const SEED_TRIP_EXPENSES: TripExpense[] = [
 function getStored<T>(key: string, defaultVal: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : defaultVal;
-  } catch {
-    return defaultVal;
+    if (raw === null) return defaultVal;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(defaultVal) && !Array.isArray(parsed)) throw new Error("Expected a stored collection.");
+    return parsed;
+  } catch (error) {
+    throw new Error(`Could not read ${key}. Your stored data has not been replaced: ${String(error)}`);
   }
 }
 
 function setStored<T>(key: string, val: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    // Ignore storage quota
+  } catch (error) {
+    throw new Error(`Could not save data. Check available browser storage: ${String(error)}`);
+  }
+}
+
+async function validateTransaction(transaction: Transaction): Promise<void> {
+  if (!Number.isSafeInteger(transaction.amountPaise) || transaction.amountPaise <= 0) {
+    throw new Error("Amount must be a positive whole-paise value within the supported limit.");
+  }
+  if (!isValidStrictCalendarDate(transaction.date)) throw new Error("Enter a valid calendar date.");
+  const accounts = await api.getAccounts();
+  if (!accounts.some((a) => a.id === transaction.accountId)) throw new Error("Choose an existing account.");
+  const categories = await api.getCategories();
+  if (!categories.some((c) => c.name === transaction.category && c.isIncome === (transaction.type === "income"))) {
+    throw new Error("Choose a category matching the transaction flow.");
   }
 }
 
@@ -219,27 +238,7 @@ export const api = {
     } else {
       accounts = getStored<Account[]>(STORAGE_KEYS.ACCOUNTS, SEED_ACCOUNTS);
     }
-    // Defensive normalization: Clean up any legacy bank brands (HDFC, ICICI) to unified Primary Amount
-    const hasLegacy = accounts.some(
-      (a) => a.id === "acc-hdfc" || a.id === "acc-icici" || a.name.includes("HDFC") || a.name.includes("ICICI")
-    );
-    if (hasLegacy) {
-      const totalStarting = accounts.reduce((sum, a) => {
-        return sum + (a.type === "credit" ? -a.startingBalancePaise : a.startingBalancePaise);
-      }, 0);
-      accounts = [
-        {
-          id: "acc-primary",
-          name: "Primary Amount",
-          type: "bank",
-          startingBalancePaise: Math.max(15000000, totalStarting)
-        }
-      ];
-      if (!isTauriDesktop()) {
-        setStored(STORAGE_KEYS.ACCOUNTS, accounts);
-      }
-    }
-    return accounts.length > 0 ? accounts : SEED_ACCOUNTS;
+    return accounts;
   },
 
   // Transactions
@@ -250,13 +249,6 @@ export const api = {
     } else {
       all = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
     }
-    // Normalize transaction accountId to primary if it referenced legacy accounts
-    all = all.map((t) => {
-      if (t.accountId === "acc-hdfc" || t.accountId === "acc-icici" || t.accountId === "acc-cash") {
-        return { ...t, accountId: "acc-primary" };
-      }
-      return t;
-    });
     if (monthPrefix) {
       return all.filter((t) => t.date.startsWith(monthPrefix));
     }
@@ -264,6 +256,7 @@ export const api = {
   },
 
   async createTransaction(transaction: Transaction): Promise<Transaction> {
+    await validateTransaction(transaction);
     if (isTauriDesktop()) {
       return await invoke<Transaction>("create_transaction", { transaction });
     }
@@ -278,16 +271,19 @@ export const api = {
       return await invoke<boolean>("delete_transaction", { id });
     }
     const current = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    if (!current.some((t) => t.id === id)) return false;
     const updated = current.filter((t) => t.id !== id);
     setStored(STORAGE_KEYS.TRANSACTIONS, updated);
     return true;
   },
 
   async updateTransaction(transaction: Transaction): Promise<boolean> {
+    await validateTransaction(transaction);
     if (isTauriDesktop()) {
       return await invoke<boolean>("update_transaction", { transaction });
     }
     const current = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    if (!current.some((t) => t.id === transaction.id)) throw new Error("Transaction no longer exists.");
     const updated = current.map((t) => (t.id === transaction.id ? transaction : t));
     setStored(STORAGE_KEYS.TRANSACTIONS, updated);
     return true;
@@ -295,6 +291,10 @@ export const api = {
 
   // Accounts CRUD
   async createAccount(account: Account): Promise<Account> {
+    if (!account.name.trim()) throw new Error("Account name is required.");
+    if (!Number.isSafeInteger(account.startingBalancePaise) || account.startingBalancePaise < 0) {
+      throw new Error("Starting balance must be a non-negative whole-paise amount.");
+    }
     if (isTauriDesktop()) {
       return await invoke<Account>("create_account", { account });
     }
@@ -305,10 +305,14 @@ export const api = {
   },
 
   async deleteAccount(id: string): Promise<boolean> {
+    if ((await this.getTransactions()).some((tx) => tx.accountId === id)) {
+      throw new Error("This account has transactions. Move or delete them before deleting the account.");
+    }
     if (isTauriDesktop()) {
       return await invoke<boolean>("delete_account", { id });
     }
     const current = getStored<Account[]>(STORAGE_KEYS.ACCOUNTS, SEED_ACCOUNTS);
+    if (!current.some((account) => account.id === id)) return false;
     setStored(STORAGE_KEYS.ACCOUNTS, current.filter((a) => a.id !== id));
     return true;
   },
@@ -322,6 +326,9 @@ export const api = {
   },
 
   async setBudget(budget: CategoryBudget): Promise<CategoryBudget> {
+    if (!Number.isSafeInteger(budget.limitPaise) || budget.limitPaise <= 0) {
+      throw new Error("Budget must be a positive whole-paise amount.");
+    }
     if (isTauriDesktop()) {
       return await invoke<CategoryBudget>("set_budget", { budget });
     }
@@ -336,30 +343,7 @@ export const api = {
     if (isTauriDesktop()) {
       return await invoke<MonthlyFinancialSummary>("get_monthly_summary", { monthPrefix });
     }
-    const txs = await this.getTransactions(monthPrefix);
-    let inflow = 0;
-    let outflow = 0;
-    let recurring = 0;
-
-    for (const t of txs) {
-      if (t.type === "income") {
-        inflow += t.amountPaise;
-      } else {
-        outflow += t.amountPaise;
-        if (t.isRecurring) recurring += t.amountPaise;
-      }
-    }
-
-    const net = inflow - outflow;
-    const rate = inflow > 0 ? (net / inflow) * 100 : 0;
-
-    return {
-      totalInflowPaise: inflow,
-      totalOutflowPaise: outflow,
-      netSavingsPaise: net,
-      savingsRatePercentage: Math.max(0, rate),
-      recurringCommitmentPaise: recurring
-    };
+    return calculateMonthlySummary(await this.getTransactions(monthPrefix));
   },
 
   // Categories
@@ -368,7 +352,7 @@ export const api = {
       return await invoke<Category[]>("get_categories");
     }
     // Fallback: derive from seeded categories
-    return [
+    return getStored<Category[]>(STORAGE_KEYS.CATEGORIES, [
       { id: "cat-rent", name: "Rent", color: "#0ea5e9", isIncome: false },
       { id: "cat-groceries", name: "Groceries", color: "#10b981", isIncome: false },
       { id: "cat-dining", name: "Dining Out", color: "#f59e0b", isIncome: false },
@@ -380,13 +364,19 @@ export const api = {
       { id: "cat-freelance", name: "Freelance", color: "#0ea5e9", isIncome: true },
       { id: "cat-other", name: "Other", color: "#94a3b8", isIncome: false },
       { id: "cat-general", name: "General Spending", color: "#64748b", isIncome: false },
-    ];
+    ]);
   },
 
   async createCategory(category: Category): Promise<Category> {
+    if (!category.name.trim()) throw new Error("Category name is required.");
     if (isTauriDesktop()) {
       return await invoke<Category>("create_category", { category });
     }
+    const current = await this.getCategories();
+    if (current.some((c) => c.name.toLowerCase() === category.name.toLowerCase())) {
+      throw new Error("A category with this name already exists.");
+    }
+    setStored(STORAGE_KEYS.CATEGORIES, [...current, category]);
     return category;
   },
 
@@ -394,6 +384,8 @@ export const api = {
     if (isTauriDesktop()) {
       return await invoke<boolean>("delete_category", { id });
     }
+    const current = await this.getCategories();
+    setStored(STORAGE_KEYS.CATEGORIES, current.filter((c) => c.id !== id));
     return true;
   },
 
@@ -402,14 +394,14 @@ export const api = {
     if (isTauriDesktop()) {
       return await invoke<string>("get_database_path");
     }
-    return "%LOCALAPPDATA%\\Nest\\nest.db";
+    return "Browser preview storage (localStorage); not a SQLite database";
   },
 
   async backupDatabase(targetPath: string): Promise<string> {
     if (isTauriDesktop()) {
       return await invoke<string>("backup_database", { targetPath });
     }
-    return targetPath;
+    throw new Error("SQLite backups are available only in the desktop app. Use the JSON snapshot in browser preview.");
   },
 
   // Trips & Travel Expenses
