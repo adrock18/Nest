@@ -158,6 +158,7 @@ This table tracks **every file and directory** currently in the workspace, what 
 | [`src/utils/travel.ts`](src/utils/travel.ts) | **Newly Added** | Travel Calculations & Split Settlement Engine | Handles integer paise splits with 0 lost paise, daily spending averages, category aggregations, and debt minimization algorithm. |
 | [`src/components/AddTripModal.tsx`](src/components/AddTripModal.tsx) | **Newly Added** | Trip Creation Dialog | Dialog for creating new trips with destination, date range, budget, and companion list. |
 | [`src/components/AddTravelExpenseModal.tsx`](src/components/AddTravelExpenseModal.tsx) | **Newly Added** | Travel Expense Logging Dialog | Quick activity presets (surfing, kayaking, resort, dining, fuel), category selector, paid-by member, equal/personal/custom split mode, and live preview. |
+| [`src/components/TravelDashboard.tsx`](../src/components/TravelDashboard.tsx) | **Newly Added** | Monthly Travel dashboard | Personal/group/payer metrics, category shares, recent source navigation, and all-date trip budget check-ins; shared precision helper in travel utilities. |
 | [`src/views/TravelView.tsx`](src/views/TravelView.tsx) | **Newly Added** | Dedicated Travel & Trip Expense Workspace | 4 hero KPI metric cards (Total Spent, Per-Day Spend, Out-of-Pocket Share, Split Balance), Category breakdown, Day-by-Day timeline, and Split matrix. |
 | [`tests/edge_cases.test.ts`](tests/edge_cases.test.ts) | **Expanded** | Comprehensive Automated Edge-Case Test Suite | 94 rigorous test assertions verifying money parsing, leap years, budget ceilings, safe-to-spend, CSV export, travel days, paise splits, and debt simplification. |
 | [`scripts/create_shortcut.ps1`](scripts/create_shortcut.ps1) | **Newly Added** | Windows Desktop Shortcut Generator | Script that places the official `Nest.lnk` shortcut on the user's desktop pointing to `nest.exe` with `icon.ico`. |
@@ -269,3 +270,9 @@ Browser checks cover link/unlink persistence, source navigation/deletion,
 subscription defaults, selected-month entry dates, visible save errors/retry,
 and dark/light default/minimum-window layouts.
 Installer acceptance and a user-data restore drill remain outstanding.
+
+Travel dashboard validation: whole-paise monthly/payer/category totals,
+all-date trip budgets, zero-share/no-budget/over-limit cases, orphan exclusion,
+and overflow rejection are covered in workspace regressions. Browser checks
+verify month changes, source/category/overview navigation, empty/search states,
+and default/minimum-window dark/light layouts. Windows debug build passed.

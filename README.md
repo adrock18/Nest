@@ -20,6 +20,11 @@
   monthly summaries, relevant breakdowns, category plans, and prefilled entry.
   Travel meals, journeys, stays, and shopping appear in their category views
   using **your share**, not the group bill. Open the original trip from any row.
+- **Travel dashboard**: Selected-month personal shares, group bills, payer
+  amounts, category breakdown, and recent source expenses sit above the trip
+  list. Trip budget check-ins always use full-trip group spending across all
+  dates. Travel is also accessible from the overview; its total overlaps the
+  connected categories and must not be added to them.
 - **No duplicated payments**: Optionally link a trip expense to an existing
   account entry. The personal dashboard counts its trip share once; the account
   ledger and cash-flow totals remain unchanged. Tags supply context, not

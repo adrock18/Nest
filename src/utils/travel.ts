@@ -9,6 +9,40 @@ import type {
   MemberBalance, 
   SettlementDebt 
 } from "../types/index.ts";
+import { addPaise } from "./money.ts";
+import { computeBudgetProgress } from "./finance.ts";
+
+export function computeTravelDashboard(trips: Trip[], expenses: TripExpense[], month: string) {
+  const tripMap = new Map(trips.map((trip) => [trip.id, trip]));
+  const validExpenses = expenses.filter((expense) => tripMap.has(expense.tripId));
+  const monthlyExpenses = validExpenses.filter((expense) => expense.date.startsWith(month))
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  let personalPaise = 0;
+  let groupPaise = 0;
+  let paidByMePaise = 0;
+  const categories = new Map<TravelCategory, number>();
+  const tripSpent = new Map<string, number>();
+  for (const expense of validExpenses) {
+    tripSpent.set(expense.tripId, addPaise(tripSpent.get(expense.tripId) || 0, expense.amountPaise));
+  }
+  for (const expense of monthlyExpenses) {
+    personalPaise = addPaise(personalPaise, expense.mySharePaise);
+    groupPaise = addPaise(groupPaise, expense.amountPaise);
+    if (expense.paidBy === "Me") paidByMePaise = addPaise(paidByMePaise, expense.amountPaise);
+    categories.set(expense.category, addPaise(categories.get(expense.category) || 0, expense.mySharePaise));
+  }
+  return {
+    personalPaise, groupPaise, paidByMePaise,
+    tripCount: new Set(monthlyExpenses.map((expense) => expense.tripId)).size,
+    entries: monthlyExpenses.map((expense) => ({ expense, trip: tripMap.get(expense.tripId)! })),
+    categories: [...categories].map(([category, spentPaise]) => ({ category, spentPaise }))
+      .sort((a, b) => b.spentPaise - a.spentPaise || a.category.localeCompare(b.category)),
+    budgets: trips.map((trip) => {
+      const spentPaise = tripSpent.get(trip.id) || 0;
+      return { trip, spentPaise, ...computeBudgetProgress(spentPaise, trip.budgetPaise) };
+    }).sort((a, b) => b.trip.startDate.localeCompare(a.trip.startDate) || a.trip.id.localeCompare(b.trip.id))
+  };
+}
 
 export interface CategoryMeta {
   key: TravelCategory;

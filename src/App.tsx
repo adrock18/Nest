@@ -24,6 +24,7 @@ import { getLocalDate } from "./utils/dates";
 import { addPaise } from "./utils/money";
 import { SpendingWorkspaceView } from "./views/SpendingWorkspaceView";
 import { SPENDING_WORKSPACES, buildSpendingEntries, summarizeSpending } from "./utils/workspaces";
+import { computeTravelDashboard } from "./utils/travel";
 
 function getCurrentYM(): string {
   const now = new Date();
@@ -153,6 +154,7 @@ export const App: React.FC = () => {
 
   // Dynamic Account Balances
   const accountBalances = useMemo(() => calculateAccountBalances(accounts, allTransactions), [accounts, allTransactions]);
+  const travelSummary = useMemo(() => computeTravelDashboard(trips, tripExpenses, selectedMonth), [trips, tripExpenses, selectedMonth]);
   const workspaceSummaries = useMemo(() => SPENDING_WORKSPACES.map((workspace) => ({
     ...workspace, ...summarizeSpending(buildSpendingEntries(workspace.id, selectedMonth, allTransactions, trips, tripExpenses, accounts))
   })), [selectedMonth, allTransactions, trips, tripExpenses, accounts]);
@@ -423,6 +425,8 @@ export const App: React.FC = () => {
             onNavigateToTransactions={() => setActiveTab("transactions")}
             workspaceSummaries={workspaceSummaries}
             onNavigateToWorkspace={(workspaceId) => setActiveTab(workspaceId)}
+            travelPersonalPaise={travelSummary.personalPaise}
+            onNavigateToTravel={() => { setTripFocus(null); setActiveTab("travel"); }}
           />
         )}
 
@@ -458,6 +462,7 @@ export const App: React.FC = () => {
             tripExpenses={tripExpenses}
             onAddTrip={handleAddTrip}
             onUpdateTrip={handleUpdateTrip}
+            month={selectedMonth}
             onDeleteTrip={handleDeleteTrip}
             onAddExpense={handleAddTripExpense}
             onDeleteExpense={handleDeleteTripExpense}

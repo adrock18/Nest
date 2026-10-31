@@ -4,6 +4,7 @@ import { SPENDING_WORKSPACES, buildSpendingEntries, summarizeSpending, workspace
   workspaceForTravelCategory, workspaceBudgetSummary } from "../src/utils/workspaces.ts";
 import { calculateMonthlySummary } from "../src/utils/finance.ts";
 import { exportTransactionsToCsv, buildAnalysisSheet } from "../src/utils/export.ts";
+import { computeTravelDashboard } from "../src/utils/travel.ts";
 
 const trip: Trip = { id: "trip", name: "Holiday", destination: "Goa", startDate: "2026-09-30", endDate: "2026-10-05",
   budgetPaise: 100000, members: ["Me", "Friend"], createdAt: "2026-09-01" };
@@ -61,3 +62,36 @@ assert.match(exportTransactionsToCsv([linked], {}), /Travel Expense ID/);
 assert.match(exportTransactionsToCsv([linked], {}), /"meal"/);
 assert.match(buildAnalysisSheet({ accounts: [], transactions: [linked], budgets: [] }), /"meal"/);
 console.log("Connected workspace projection, budget, and export regression tests passed.");
+
+const priorExpense = { ...meal, id: "prior", date: "2026-09-30", amountPaise: 8000, mySharePaise: 4000, paidBy: "Me" };
+const activity: TripExpense = { ...meal, id: "activity", category: "activities", amountPaise: 5000, mySharePaise: 5000, paidBy: "Me" };
+const zeroShare = { ...meal, id: "companion", amountPaise: 100, mySharePaise: 0 };
+const orphan = { ...meal, id: "orphan", tripId: "missing" };
+const travelExpenses = [priorExpense, meal, activity, zeroShare, orphan];
+const travelDashboard = computeTravelDashboard([trip], travelExpenses, "2026-10");
+assert.equal(travelDashboard.personalPaise, 10001, "Travel includes personal activities as well as mapped category shares");
+assert.equal(travelDashboard.groupPaise, 15101, "Group amount includes companions but excludes orphan records");
+assert.equal(travelDashboard.paidByMePaise, 5000, "Personal share and payer amount are independent");
+assert.equal(travelDashboard.tripCount, 1);
+assert.equal(travelDashboard.entries.length, 3);
+assert.equal(travelDashboard.entries[0].trip.id, trip.id);
+assert.equal(travelDashboard.categories.reduce((sum, row) => sum + row.spentPaise, 0), travelDashboard.personalPaise);
+assert.equal(travelDashboard.categories.find((row) => row.category === "food")?.spentPaise, 5001);
+assert.equal(travelDashboard.budgets[0].spentPaise, 23101, "Trip budget includes every month, not just selected month");
+assert.equal(travelDashboard.budgets[0].remainingPaise, 76899);
+const emptyMonth = computeTravelDashboard([trip], travelExpenses, "2026-11");
+assert.equal(emptyMonth.personalPaise, 0);
+assert.equal(emptyMonth.groupPaise, 0);
+assert.equal(emptyMonth.paidByMePaise, 0);
+assert.equal(emptyMonth.tripCount, 0);
+assert.deepEqual(emptyMonth.entries, []);
+assert.deepEqual(emptyMonth.budgets, travelDashboard.budgets, "Changing month must not reset trip budgets");
+assert.equal(computeTravelDashboard([], travelExpenses, "2026-10").groupPaise, 0);
+assert.equal(computeTravelDashboard([trip], [{ ...meal, mySharePaise: 0 }], "2026-10").personalPaise, 0);
+assert.equal(computeTravelDashboard([{ ...trip, budgetPaise: 0 }], [meal], "2026-10").budgets[0].trip.budgetPaise, 0);
+assert.equal(computeTravelDashboard([{ ...trip, budgetPaise: 10001 }], [meal], "2026-10").budgets[0].isAtLimit, true);
+assert.equal(computeTravelDashboard([{ ...trip, budgetPaise: 10000 }], [meal], "2026-10").budgets[0].isOver, true);
+assert.equal(computeTravelDashboard([{ ...trip, budgetPaise: 12502 }], [meal], "2026-10").budgets[0].isNear, false, "Just under 80% does not trigger warning");
+assert.throws(() => computeTravelDashboard([trip], [{ ...meal, amountPaise: Number.MAX_SAFE_INTEGER }, activity], "2026-10"), /precision/);
+assert.throws(() => computeTravelDashboard([trip], [{ ...meal, mySharePaise: 1.5 }], "2026-10"), /precision/);
+console.log("Travel dashboard monthly shares, payer amounts, trip budgets, and precision regressions passed.");

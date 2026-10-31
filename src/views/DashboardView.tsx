@@ -19,11 +19,13 @@ interface DashboardViewProps {
   onOpenAddTransaction: () => void;
   workspaceSummaries: { id: WorkspaceId; title: string; totalPaise: number; travelPaise: number }[];
   onNavigateToWorkspace: (workspaceId: WorkspaceId) => void;
+  travelPersonalPaise: number;
+  onNavigateToTravel: () => void;
 }
 
 export function DashboardView({ summary, categoryBreakdown, budgets, accounts, accountBalances,
   selectedMonth, transactionCount, onNavigateToTransactions, onNavigateToBudgets,
-  onOpenAddTransaction, workspaceSummaries, onNavigateToWorkspace }: DashboardViewProps) {
+  onOpenAddTransaction, workspaceSummaries, onNavigateToWorkspace, travelPersonalPaise, onNavigateToTravel }: DashboardViewProps) {
   const { liquidCashPaise, creditDebtPaise, netCashPositionPaise } = calculateCashPosition(accounts, accountBalances);
   const budgetRows = budgets.map((budget) => {
     const spent = categoryBreakdown.find((category) => category.name === budget.category)?.spentPaise || 0;
@@ -98,7 +100,12 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
           <button className={`workspace-launch-card workspace-${workspace.id}`} key={workspace.id} onClick={() => onNavigateToWorkspace(workspace.id)}>
             <span>{workspace.title}<ArrowRight size={14} /></span><strong className="font-mono">{formatPaiseToRupees(workspace.totalPaise)}</strong>
             <small>{workspace.travelPaise > 0 ? `${formatPaiseToRupees(workspace.travelPaise)} from travel` : "Open monthly dashboard"}</small>
-          </button>)}</div>
+          </button>)}
+          <button className="workspace-launch-card workspace-travel" onClick={onNavigateToTravel}>
+            <span>Travel Expenses<ArrowRight size={14} /></span><strong className="font-mono">{formatPaiseToRupees(travelPersonalPaise)}</strong>
+            <small>Your trip shares · Overlaps category views</small>
+          </button>
+        </div>
       </section>
 
       {(alerts.length > 0 || deficit) && (

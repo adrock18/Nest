@@ -121,6 +121,13 @@
 - Travel retains its trip-wide group budgets and splits. Source navigation
   opens the original trip ledger; category links on trip rows select the expense
   month. Deleting a source/trip clears links but preserves account payments.
+- Travel has its own selected-month dashboard: personal shares, group bill
+  amounts, recorded amounts paid by Me, trips with expenses, category shares,
+  and the latest five expenses linking to the original ledger. All-date per-trip
+  budgets distinguish no limit, approaching, reached, and exceeded. The full
+  trip list remains independent of the selected month and dashboard totals are
+  independent of trip search. Travel totals overlap connected category views;
+  they are not an additional spending category or account cash-flow write.
 - SQLite migration 005 is additive and atomic. Native deletion clears references
   via a trigger; browser preview performs explicit multi-collection rollback on
   write errors. Browser category defaults migrate once, preserving deletions.

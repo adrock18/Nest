@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Travel dashboard with monthly personal shares, group bills, recorded amounts
+  paid by you, trips with spending, personal-category breakdown, recent source
+  navigation, and all-date per-trip budget check-ins. Added overview entry point.
+  Month changes never reset trip budgets; trip search affects only the trip list.
 - Six connected monthly spending dashboards: Food & Dining, Subscriptions,
   Transport & Fuel, Home & Utilities, Personal Care & Wellness, and Shopping.
   Category-prefilled recording, merchant/category breakdowns, household plans,

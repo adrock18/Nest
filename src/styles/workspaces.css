@@ -4,6 +4,7 @@
 .workspace-home { --workspace-accent: #2dd4bf; }
 .workspace-care { --workspace-accent: #f472b6; }
 .workspace-shopping { --workspace-accent: #fb923c; }
+.workspace-travel { --workspace-accent: var(--accent-cyan); }
 :root[data-theme="light"] .workspace-food { --workspace-accent: #b45309; }
 :root[data-theme="light"] .workspace-subscriptions { --workspace-accent: #7c3aed; }
 :root[data-theme="light"] .workspace-transport { --workspace-accent: #2563eb; }
@@ -40,6 +41,21 @@
 .source-link-form { border-color: var(--accent-cyan); display: flex; flex-direction: column; gap: 14px; }
 .source-highlight td { background: var(--accent-cyan-bg); }
 .travel-connections .toolbar-actions { margin-top: 14px; }
+.travel-dashboard .workspace-detail-grid { margin-bottom: 20px; }
+.travel-budget-row { border-top: 1px solid var(--border-subtle); padding: 14px 0; }
+.travel-budget-row > .text-button { overflow-wrap: anywhere; text-align: left; }
+.travel-budget-values { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 8px 0; }
+.travel-budget-values span, .travel-budget-row small { font-size: 11px; }
+.travel-budget-values span { color: var(--text-secondary); }
+.travel-budget-row .progress-track { margin-bottom: 8px; }
+.travel-budget-danger { background: var(--expense-rose); }
+.travel-recent-entry { display: flex; justify-content: space-between; align-items: center; gap: 16px; width: 100%; border: 0; border-bottom: 1px solid var(--border-subtle); padding: 14px 0; text-align: left; color: var(--text-main); background: transparent; cursor: pointer; }
+.travel-recent-entry:hover { background: var(--bg-card-hover); }
+.travel-recent-entry > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.travel-recent-entry > span:last-child { flex-shrink: 0; text-align: right; }
+.travel-recent-entry strong { font-size: 13px; }
+.travel-recent-entry small { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--text-secondary); font-size: 11px; }
+.travel-recent-entry > span:last-child small { justify-content: flex-end; }
 .workspace-launch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 .workspace-launch-card { display: flex; flex-direction: column; gap: 10px; text-align: left; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; color: var(--text-main); cursor: pointer; min-width: 0; }
 .workspace-launch-card:hover { border-color: var(--workspace-accent); background: var(--bg-card-hover); }
