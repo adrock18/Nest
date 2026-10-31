@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Transaction, Account, CategoryBudget, MonthlyFinancialSummary, Trip, TripExpense } from "../types";
+import { Transaction, Account, Category, CategoryBudget, MonthlyFinancialSummary, Trip, TripExpense } from "../types";
 
 // Check if running inside native Tauri desktop window
 export const isTauriDesktop = (): boolean => {
@@ -283,6 +283,36 @@ export const api = {
     return true;
   },
 
+  async updateTransaction(transaction: Transaction): Promise<boolean> {
+    if (isTauriDesktop()) {
+      return await invoke<boolean>("update_transaction", { transaction });
+    }
+    const current = getStored<Transaction[]>(STORAGE_KEYS.TRANSACTIONS, SEED_TRANSACTIONS);
+    const updated = current.map((t) => (t.id === transaction.id ? transaction : t));
+    setStored(STORAGE_KEYS.TRANSACTIONS, updated);
+    return true;
+  },
+
+  // Accounts CRUD
+  async createAccount(account: Account): Promise<Account> {
+    if (isTauriDesktop()) {
+      return await invoke<Account>("create_account", { account });
+    }
+    const current = getStored<Account[]>(STORAGE_KEYS.ACCOUNTS, SEED_ACCOUNTS);
+    const updated = [...current.filter((a) => a.id !== account.id), account];
+    setStored(STORAGE_KEYS.ACCOUNTS, updated);
+    return account;
+  },
+
+  async deleteAccount(id: string): Promise<boolean> {
+    if (isTauriDesktop()) {
+      return await invoke<boolean>("delete_account", { id });
+    }
+    const current = getStored<Account[]>(STORAGE_KEYS.ACCOUNTS, SEED_ACCOUNTS);
+    setStored(STORAGE_KEYS.ACCOUNTS, current.filter((a) => a.id !== id));
+    return true;
+  },
+
   // Budgets
   async getBudgets(): Promise<CategoryBudget[]> {
     if (isTauriDesktop()) {
@@ -330,6 +360,41 @@ export const api = {
       savingsRatePercentage: Math.max(0, rate),
       recurringCommitmentPaise: recurring
     };
+  },
+
+  // Categories
+  async getCategories(): Promise<Category[]> {
+    if (isTauriDesktop()) {
+      return await invoke<Category[]>("get_categories");
+    }
+    // Fallback: derive from seeded categories
+    return [
+      { id: "cat-rent", name: "Rent", color: "#0ea5e9", isIncome: false },
+      { id: "cat-groceries", name: "Groceries", color: "#10b981", isIncome: false },
+      { id: "cat-dining", name: "Dining Out", color: "#f59e0b", isIncome: false },
+      { id: "cat-fuel", name: "Fuel", color: "#8b5cf6", isIncome: false },
+      { id: "cat-utilities", name: "Utilities", color: "#ec4899", isIncome: false },
+      { id: "cat-subscriptions", name: "Subscriptions", color: "#f43f5e", isIncome: false },
+      { id: "cat-healthcare", name: "Healthcare", color: "#14b8a6", isIncome: false },
+      { id: "cat-salary", name: "Salary", color: "#10b981", isIncome: true },
+      { id: "cat-freelance", name: "Freelance", color: "#0ea5e9", isIncome: true },
+      { id: "cat-other", name: "Other", color: "#94a3b8", isIncome: false },
+      { id: "cat-general", name: "General Spending", color: "#64748b", isIncome: false },
+    ];
+  },
+
+  async createCategory(category: Category): Promise<Category> {
+    if (isTauriDesktop()) {
+      return await invoke<Category>("create_category", { category });
+    }
+    return category;
+  },
+
+  async deleteCategory(id: string): Promise<boolean> {
+    if (isTauriDesktop()) {
+      return await invoke<boolean>("delete_category", { id });
+    }
+    return true;
   },
 
   // Database Info & Backups

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::path::PathBuf;
 use rusqlite::Connection;
 use tauri::State;
-use crate::models::{Account, CategoryBudget, MonthlySummary, Transaction, Trip, TripExpense};
+use crate::models::{Account, Category, CategoryBudget, MonthlySummary, Transaction, Trip, TripExpense};
 use crate::db;
 
 pub struct AppState {
@@ -79,6 +79,53 @@ pub fn backup_database(
     let target = PathBuf::from(&target_path);
     db::vacuum_into_backup(&conn, &target).map_err(|e| e.to_string())?;
     Ok(target_path)
+}
+
+#[tauri::command]
+pub fn update_transaction(
+    state: State<'_, AppState>,
+    transaction: Transaction,
+) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_transaction(&conn, &transaction).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_account(
+    state: State<'_, AppState>,
+    account: Account,
+) -> Result<Account, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::insert_account(&conn, &account).map_err(|e| e.to_string())?;
+    Ok(account)
+}
+
+#[tauri::command]
+pub fn delete_account(state: State<'_, AppState>, id: String) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::remove_account(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_categories(state: State<'_, AppState>) -> Result<Vec<Category>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_categories(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_category(
+    state: State<'_, AppState>,
+    category: Category,
+) -> Result<Category, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::insert_category(&conn, &category).map_err(|e| e.to_string())?;
+    Ok(category)
+}
+
+#[tauri::command]
+pub fn delete_category(state: State<'_, AppState>, id: String) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::remove_category(&conn, &id).map_err(|e| e.to_string())
 }
 
 // Travel & Trip Expenses Commands

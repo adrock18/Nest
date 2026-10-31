@@ -22,6 +22,13 @@ export interface Transaction {
   amountPaise: number; // Stored strictly as positive integer paise (₹10.50 -> 1050)
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  color: string;
+  isIncome: boolean;
+}
+
 export interface CategoryBudget {
   category: string;
   limitPaise: number;

@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::models::{Account, CategoryBudget, MonthlySummary, Transaction, Trip, TripExpense};
+use crate::models::{Account, Category, CategoryBudget, MonthlySummary, Transaction, Trip, TripExpense};
 
 pub fn get_db_path() -> PathBuf {
     let mut base_dir = dirs_fallback();
@@ -431,6 +431,40 @@ pub fn remove_transaction(conn: &Connection, id: &str) -> Result<bool> {
     Ok(affected > 0)
 }
 
+pub fn update_transaction(conn: &Connection, tx: &Transaction) -> Result<bool> {
+    let tags_json = serde_json::to_string(&tx.tags).unwrap_or_else(|_| "[]".to_string());
+    let affected = conn.execute(
+        "UPDATE transactions SET date = ?1, flow_type = ?2, account_id = ?3, category = ?4, notes = ?5, tags_json = ?6, is_recurring = ?7, amount_paise = ?8 WHERE id = ?9",
+        params![
+            tx.date,
+            tx.flow_type,
+            tx.account_id,
+            tx.category,
+            tx.notes,
+            tags_json,
+            if tx.is_recurring { 1 } else { 0 },
+            tx.amount_paise,
+            tx.id
+        ],
+    )?;
+    Ok(affected > 0)
+}
+
+// Account CRUD
+pub fn insert_account(conn: &Connection, acc: &Account) -> Result<()> {
+    conn.execute(
+        "INSERT INTO accounts (id, name, account_type, starting_balance_paise) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, account_type = excluded.account_type, starting_balance_paise = excluded.starting_balance_paise",
+        params![acc.id, acc.name, acc.account_type, acc.starting_balance_paise],
+    )?;
+    Ok(())
+}
+
+pub fn remove_account(conn: &Connection, id: &str) -> Result<bool> {
+    let affected = conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
+    Ok(affected > 0)
+}
+
 pub fn fetch_budgets(conn: &Connection) -> Result<Vec<CategoryBudget>> {
     let mut stmt = conn.prepare("SELECT category, limit_paise, color FROM budgets ORDER BY category ASC")?;
     let rows = stmt.query_map([], |row| {
@@ -455,6 +489,39 @@ pub fn save_budget_limit(conn: &Connection, budget: &CategoryBudget) -> Result<(
         params![budget.category, budget.limit_paise, budget.color],
     )?;
     Ok(())
+}
+
+// Category CRUD
+pub fn fetch_categories(conn: &Connection) -> Result<Vec<Category>> {
+    let mut stmt = conn.prepare("SELECT id, name, color, is_income FROM categories ORDER BY name ASC")?;
+    let rows = stmt.query_map([], |row| {
+        let is_income_num: i32 = row.get(3)?;
+        Ok(Category {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            color: row.get(2)?,
+            is_income: is_income_num != 0,
+        })
+    })?;
+    let mut list = Vec::new();
+    for c in rows {
+        list.push(c?);
+    }
+    Ok(list)
+}
+
+pub fn insert_category(conn: &Connection, cat: &Category) -> Result<()> {
+    conn.execute(
+        "INSERT INTO categories (id, name, color, is_income) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, color = excluded.color, is_income = excluded.is_income",
+        params![cat.id, cat.name, cat.color, if cat.is_income { 1 } else { 0 }],
+    )?;
+    Ok(())
+}
+
+pub fn remove_category(conn: &Connection, id: &str) -> Result<bool> {
+    let affected = conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
+    Ok(affected > 0)
 }
 
 pub fn calculate_monthly_summary(conn: &Connection, month_prefix: &str) -> Result<MonthlySummary> {

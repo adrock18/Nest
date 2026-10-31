@@ -1,21 +1,29 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Check, Repeat, Tag } from "lucide-react";
-import { FlowType, Transaction, Account } from "../types";
-import { parseRupeesToPaise } from "../utils/money";
+import { FlowType, Transaction, Account, Category } from "../types";
+import { parseRupeesToPaise, formatPaiseToRupees } from "../utils/money";
 
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   accounts: Account[];
+  categories: Category[];
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
+  onEditTransaction?: (transaction: Transaction) => void;
+  editingTransaction?: Transaction | null;
 }
 
-export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ 
-  isOpen, 
-  onClose, 
+export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
+  isOpen,
+  onClose,
   accounts,
-  onAddTransaction 
+  categories,
+  onAddTransaction,
+  onEditTransaction,
+  editingTransaction
 }) => {
+  const isEditing = !!editingTransaction;
+
   const [type, setType] = useState<FlowType>("expense");
   const [amountInput, setAmountInput] = useState("");
   const [accountId, setAccountId] = useState(() => (accounts && accounts[0]?.id) || "acc-primary");
@@ -26,7 +34,31 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [isRecurring, setIsRecurring] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  React.useEffect(() => {
+  // Populate form when editing
+  useEffect(() => {
+    if (editingTransaction) {
+      setType(editingTransaction.type);
+      setAmountInput(formatPaiseToRupees(editingTransaction.amountPaise).replace(/[₹,\s]/g, ""));
+      setAccountId(editingTransaction.accountId);
+      setCategory(editingTransaction.category);
+      setDate(editingTransaction.date);
+      setNotes(editingTransaction.notes);
+      setTagsInput(editingTransaction.tags.join(", "));
+      setIsRecurring(editingTransaction.isRecurring);
+    } else {
+      setType("expense");
+      setAmountInput("");
+      setAccountId((accounts && accounts[0]?.id) || "acc-primary");
+      setCategory("General Spending");
+      setDate(new Date().toISOString().split("T")[0]);
+      setNotes("");
+      setTagsInput("");
+      setIsRecurring(false);
+    }
+    setErrorMessage("");
+  }, [editingTransaction, accounts]);
+
+  useEffect(() => {
     if (accounts && accounts.length > 0 && !accounts.some((a) => a.id === accountId)) {
       setAccountId(accounts[0].id);
     }
@@ -34,14 +66,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
   if (!isOpen) return null;
 
+  const expenseCategories = categories.filter((c) => !c.isIncome);
+  const incomeCategories = categories.filter((c) => c.isIncome);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
 
     try {
       const paise = parseRupeesToPaise(amountInput);
-      
-      // Parse tags (split by commas or spaces, ensure single # prefix, ignore standalone #)
+
+      // Parse tags
       const parsedTags = tagsInput
         .split(/[, ]+/)
         .map((t) => t.trim().replace(/^#+/, ""))
@@ -50,16 +85,30 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
       const validDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().split("T")[0];
 
-      onAddTransaction({
-        date: validDate,
-        type,
-        accountId,
-        category,
-        notes: notes.trim() || (type === "income" ? "Income deposit" : "General spending"),
-        tags: parsedTags,
-        isRecurring,
-        amountPaise: paise
-      });
+      if (isEditing && editingTransaction && onEditTransaction) {
+        onEditTransaction({
+          ...editingTransaction,
+          date: validDate,
+          type,
+          accountId,
+          category,
+          notes: notes.trim() || (type === "income" ? "Income deposit" : "General spending"),
+          tags: parsedTags,
+          isRecurring,
+          amountPaise: paise
+        });
+      } else {
+        onAddTransaction({
+          date: validDate,
+          type,
+          accountId,
+          category,
+          notes: notes.trim() || (type === "income" ? "Income deposit" : "General spending"),
+          tags: parsedTags,
+          isRecurring,
+          amountPaise: paise
+        });
+      }
 
       // Reset form
       setAmountInput("");
@@ -94,7 +143,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         boxShadow: "var(--shadow-modal)"
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-main)" }}>Record Transaction</h2>
+          <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-main)" }}>
+            {isEditing ? "Edit Transaction" : "Record Transaction"}
+          </h2>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
             <X size={18} />
           </button>
@@ -130,7 +181,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
               onClick={() => {
                 setType("expense");
-                setCategory("General Spending");
+                if (incomeCategories.some((c) => c.name === category)) setCategory("General Spending");
               }}
             >
               Spending
@@ -148,7 +199,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
               onClick={() => {
                 setType("income");
-                setCategory("Salary");
+                if (expenseCategories.some((c) => c.name === category)) setCategory("Salary");
               }}
             >
               Income
@@ -183,16 +234,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             />
           </div>
 
-          {/* Category & Calendar Date */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+          {/* Account & Calendar Date */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px" }}>
-                CATEGORY
+                ACCOUNT
               </label>
               <select
-                id="select-transaction-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                id="select-transaction-account"
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -203,32 +254,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                   fontSize: "13px"
                 }}
               >
-                {type === "expense" ? (
-                  <>
-                    <option value="Groceries">Groceries & Supermarket</option>
-                    <option value="Subscriptions">Subscriptions (Netflix, Spotify, Cloud, Gym)</option>
-                    <option value="Shopping">Shopping & Retail (Clothing, Electronics, Gadgets)</option>
-                    <option value="Dining Out">Dining Out, Cafes & Delivery</option>
-                    <option value="Rent">Rent & Housing</option>
-                    <option value="Utilities">Utilities & Bills (Electricity, Wi-Fi, Gas)</option>
-                    <option value="Fuel">Fuel, Cabs & Transit</option>
-                    <option value="Healthcare">Healthcare & Pharmacy</option>
-                    <option value="Entertainment">Entertainment & Leisure</option>
-                    <option value="Travel">Travel & Vacations</option>
-                    <option value="General Spending">General Spending</option>
-                    <option value="Other">Other Spending</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="Salary">Monthly Salary</option>
-                    <option value="Freelance">Freelance & Side Gigs</option>
-                    <option value="Investments">Investment / Dividends / Returns</option>
-                    <option value="Rental Income">Rental Income</option>
-                    <option value="Refunds">Reimbursements & Refunds</option>
-                    <option value="Gift">Gifts / Cash Inflow</option>
-                    <option value="Other">Other Earnings</option>
-                  </>
-                )}
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.type})</option>
+                ))}
               </select>
             </div>
 
@@ -256,6 +284,36 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
           </div>
 
+          {/* Category */}
+          <div>
+            <label style={{ display: "block", fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px" }}>
+              CATEGORY
+            </label>
+            <select
+              id="select-transaction-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--text-main)",
+                fontSize: "13px"
+              }}
+            >
+              {type === "expense"
+                ? expenseCategories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))
+                : incomeCategories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))
+              }
+            </select>
+          </div>
+
           {/* Notes & Merchant */}
           <div>
             <label style={{ display: "block", fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px" }}>
@@ -279,7 +337,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             />
           </div>
 
-          {/* Tags (Multi-Dimensional Taxonomies) */}
+          {/* Tags */}
           <div>
             <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11.5px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px" }}>
               <Tag size={12} /> TAGS (COMMA SEPARATED)
@@ -302,7 +360,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             />
           </div>
 
-          {/* Recurring Commitment Marker */}
+          {/* Recurring Toggle */}
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -332,7 +390,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </button>
             <button type="submit" id="btn-submit-transaction" className="btn-primary">
               <Check size={16} />
-              <span>Record Transaction</span>
+              <span>{isEditing ? "Save Changes" : "Record Transaction"}</span>
             </button>
           </div>
         </form>

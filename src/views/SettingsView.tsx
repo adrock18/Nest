@@ -1,20 +1,34 @@
 import React, { useState } from "react";
-import { Database, ShieldCheck, Download, HardDrive, CheckCircle2, Copy, FileSpreadsheet } from "lucide-react";
+import { Database, ShieldCheck, Download, HardDrive, CheckCircle2, Copy, FileSpreadsheet, Plus, Trash2, Pencil, Landmark, CreditCard, Banknote, Save } from "lucide-react";
 import { Transaction, Account, CategoryBudget } from "../types";
 import { buildAnalysisSheet } from "../utils/export";
+import { formatPaiseToRupees } from "../utils/money";
+import { api } from "../services/api";
 
 interface SettingsViewProps {
   transactions: Transaction[];
   accounts: Account[];
   budgets?: CategoryBudget[];
   databasePath?: string;
+  onAddAccount: () => void;
+  onEditAccount: (account: Account) => void;
+  onDeleteAccount: (id: string) => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ 
-  transactions, 
+const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
+  bank: <Landmark size={16} />,
+  credit: <CreditCard size={16} />,
+  cash: <Banknote size={16} />,
+};
+
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  transactions,
   accounts,
   budgets = [],
-  databasePath = "%LOCALAPPDATA%\\Nest\\nest.db"
+  databasePath = "%LOCALAPPDATA%\\Nest\\nest.db",
+  onAddAccount,
+  onEditAccount,
+  onDeleteAccount
 }) => {
   const [backupMessage, setBackupMessage] = useState("");
 
@@ -29,7 +43,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }, {} as Record<string, string>);
   }, [safeAccounts]);
 
-  // 1-Click Copy for Google Sheets (Tab-Separated Multi-Table Dashboard)
+  // 1-Click Copy for Google Sheets
   const handleCopyForGoogleSheets = async () => {
     const sheetContent = buildAnalysisSheet({
       accounts: safeAccounts,
@@ -41,7 +55,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await navigator.clipboard.writeText(sheetContent);
       setBackupMessage("Copied to clipboard! Open Google Sheets and press Ctrl+V to paste your complete revenue, spending & ledger analysis.");
     } catch {
-      // Fallback for environments where navigator.clipboard is unavailable
       const textArea = document.createElement("textarea");
       textArea.value = sheetContent;
       document.body.appendChild(textArea);
@@ -53,7 +66,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setBackupMessage(""), 6000);
   };
 
-  // Comprehensive Multi-Section Analysis CSV Export (for Excel & Google Sheets Import)
+  // Analysis CSV Export
   const handleExportAnalysisCSV = () => {
     const csvContent = buildAnalysisSheet({
       accounts: safeAccounts,
@@ -73,25 +86,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setBackupMessage(""), 5000);
   };
 
-  // Raw Itemized Ledger CSV
+  // Raw CSV
   const handleExportRawCSV = () => {
-    const headers = [
-      "ID", 
-      "Date", 
-      "Flow Type", 
-      "Account", 
-      "Category", 
-      "Tags", 
-      "Recurring", 
-      "Notes / Merchant", 
-      "Amount (INR)", 
-      "Amount (Paise)"
-    ];
-
+    const headers = ["ID", "Date", "Flow Type", "Account", "Category", "Tags", "Recurring", "Notes / Merchant", "Amount (INR)", "Amount (Paise)"];
     const rows = safeTransactions.map((t) => [
-      t.id,
-      t.date,
-      t.type,
+      t.id, t.date, t.type,
       `"${accountMap[t.accountId] || "Primary Account"}"`,
       `"${t.category || ""}"`,
       `"${(t.tags || []).join(" ")}"`,
@@ -100,7 +99,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ((t.amountPaise || 0) / 100).toFixed(2),
       (t.amountPaise || 0).toString()
     ]);
-
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -114,6 +112,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setBackupMessage(""), 4000);
   };
 
+  // JSON Snapshot
   const handleDownloadBackup = () => {
     const backupData = {
       schemaVersion: "1.1.0",
@@ -139,6 +138,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setBackupMessage(""), 4000);
   };
 
+  // VACUUM Backup
+  const handleVacuumBackup = async () => {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").split("T").join("_");
+      // Use the same directory as the database
+      const dbDir = databasePath.replace(/[/\\][^/\\]+$/, "");
+      const targetPath = `${dbDir}\\nest_backup_${timestamp}.db`;
+      await api.backupDatabase(targetPath);
+      setBackupMessage(`SQLite VACUUM backup created: ${targetPath}`);
+    } catch (err) {
+      setBackupMessage(`Backup failed: ${err}`);
+    }
+    setTimeout(() => setBackupMessage(""), 8000);
+  };
+
   return (
     <div className="view-content-wrapper" style={{ maxWidth: "840px" }}>
       {backupMessage && (
@@ -158,6 +172,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span>{backupMessage}</span>
         </div>
       )}
+
+      {/* Account Management */}
+      <div className="panel-card" style={{ marginBottom: "20px" }}>
+        <div className="panel-header">
+          <div className="panel-title">
+            <Landmark size={18} color="var(--brand-indigo)" />
+            <span>Accounts & Wallets</span>
+          </div>
+          <button className="btn-primary" onClick={onAddAccount} style={{ fontSize: "12px", padding: "6px 12px" }}>
+            <Plus size={14} />
+            <span>Add Account</span>
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {safeAccounts.map((acc) => (
+            <div
+              key={acc.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 14px",
+                background: "var(--bg-card-subtle)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-md)"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ color: "var(--accent-cyan)" }}>
+                  {ACCOUNT_ICONS[acc.type] || <Landmark size={16} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--text-main)" }}>{acc.name}</div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "capitalize" }}>{acc.type} Account</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ textAlign: "right" }}>
+                  <div className="font-mono" style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-main)" }}>
+                    {formatPaiseToRupees(acc.startingBalancePaise)}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>Starting Balance</div>
+                </div>
+                <button onClick={() => onEditAccount(acc)} style={{ background: "transparent", border: "none", color: "var(--accent-cyan)", cursor: "pointer", padding: "4px" }} title="Edit">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => onDeleteAccount(acc.id)} style={{ background: "transparent", border: "none", color: "var(--expense-rose)", cursor: "pointer", padding: "4px" }} title="Delete">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {safeAccounts.length === 0 && (
+            <div style={{ padding: "20px", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
+              No accounts yet. Add your first bank account, credit card, or cash wallet.
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Google Sheets & Excel Export Hub */}
       <div className="panel-card" style={{ marginBottom: "20px" }}>
@@ -184,33 +258,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           fontSize: "12px",
           color: "var(--text-muted)"
         }}>
-          💡 <strong>Tip for Google Sheets:</strong> Click <em>"Copy for Google Sheets"</em>, open any new spreadsheet (<code style={{ color: "var(--accent-cyan)" }}>sheets.new</code>), and press <kbd style={{ padding: "2px 5px", background: "var(--bg-surface)", border: "1px solid var(--border-medium)", borderRadius: "4px" }}>Ctrl+V</kbd>. All tables and numbers will format into columns instantly!
+          💡 <strong>Tip for Google Sheets:</strong> Click <em>&quot;Copy for Google Sheets&quot;</em>, open any new spreadsheet (<code style={{ color: "var(--accent-cyan)" }}>sheets.new</code>), and press <kbd style={{ padding: "2px 5px", background: "var(--bg-surface)", border: "1px solid var(--border-medium)", borderRadius: "4px" }}>Ctrl+V</kbd>. All tables and numbers will format into columns instantly!
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-          <button 
-            className="btn-primary" 
-            id="btn-copy-sheets" 
-            onClick={handleCopyForGoogleSheets}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
+          <button className="btn-primary" id="btn-copy-sheets" onClick={handleCopyForGoogleSheets} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <Copy size={15} />
             <span>Copy for Google Sheets (Instant Paste)</span>
           </button>
-
-          <button 
-            className="btn-secondary" 
-            id="btn-export-analysis-csv" 
-            onClick={handleExportAnalysisCSV}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
+          <button className="btn-secondary" id="btn-export-analysis-csv" onClick={handleExportAnalysisCSV} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <Download size={15} />
             <span>Export Analysis Workbook (.csv)</span>
           </button>
         </div>
       </div>
 
-      {/* Raw Ledger & Disaster Recovery Snapshots */}
+      {/* Raw Ledger & Database Snapshots */}
       <div className="panel-card" style={{ marginBottom: "20px" }}>
         <div className="panel-header">
           <div className="panel-title">
@@ -220,23 +283,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
-          Export raw single-table transaction data or generate an unencrypted portable JSON snapshot of your entire workspace.
+          Export raw transaction data, generate portable JSON snapshots, or create atomic SQLite backups using the native VACUUM engine.
         </p>
 
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
           <button className="btn-secondary" id="btn-export-raw-csv" onClick={handleExportRawCSV}>
             <Download size={15} />
             <span>Export Raw Ledger (.csv)</span>
           </button>
-
           <button className="btn-secondary" id="btn-backup-now" onClick={handleDownloadBackup}>
             <Download size={15} />
             <span>Export Portable Snapshot (.json)</span>
           </button>
+          <button className="btn-primary" id="btn-vacuum-backup" onClick={handleVacuumBackup} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Save size={15} />
+            <span>SQLite VACUUM Backup (.db)</span>
+          </button>
         </div>
       </div>
 
-      {/* Local-First Architecture Guarantee */}
+      {/* Local-First Architecture */}
       <div className="panel-card">
         <div className="panel-header">
           <div className="panel-title">
@@ -252,12 +318,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <p>
             Nest operates 100% offline. All financial transactions, accounts, and category budgets are persisted in your local SQLite database without third-party cloud servers.
           </p>
-          <div style={{ 
-            padding: "10px 14px", 
-            background: "var(--bg-app)", 
-            borderRadius: "var(--radius-md)", 
-            fontFamily: "var(--font-mono)", 
-            fontSize: "12px", 
+          <div style={{
+            padding: "10px 14px",
+            background: "var(--bg-app)",
+            borderRadius: "var(--radius-md)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "12px",
             color: "var(--text-main)",
             border: "1px solid var(--border-subtle)",
             wordBreak: "break-all"
@@ -269,4 +335,3 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     </div>
   );
 };
-

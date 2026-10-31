@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, ArrowDownRight, ArrowUpRight, Trash2, Plus, Repeat } from "lucide-react";
+import { Search, ArrowDownRight, ArrowUpRight, Trash2, Plus, Repeat, Pencil } from "lucide-react";
 import { Transaction, Account } from "../types";
 import { formatPaiseToRupees } from "../utils/money";
 
@@ -8,13 +8,15 @@ interface TransactionsViewProps {
   accounts: Account[];
   onDeleteTransaction: (id: string) => void;
   onOpenAddTransaction: () => void;
+  onEditTransaction: (tx: Transaction) => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
   accounts: _accounts,
   onDeleteTransaction,
-  onOpenAddTransaction
+  onOpenAddTransaction,
+  onEditTransaction
 }) => {
   const [filterType, setFilterType] = useState<"all" | "expense" | "income" | "recurring">("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -102,7 +104,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 <th>Category & Tags</th>
                 <th>Notes / Merchant</th>
                 <th style={{ textAlign: "right" }}>Amount</th>
-                <th style={{ textAlign: "center", width: "70px" }}>Actions</th>
+                <th style={{ textAlign: "center", width: "90px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -135,14 +137,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                       {tx.tags && tx.tags.length > 0 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                           {tx.tags.map((tag) => (
-                            <span 
-                              key={tag} 
-                              style={{ 
-                                fontSize: "10.5px", 
-                                color: "var(--accent-cyan)", 
-                                background: "var(--accent-cyan-bg)", 
-                                padding: "1px 6px", 
-                                borderRadius: "4px" 
+                            <span
+                              key={tag}
+                              style={{
+                                fontSize: "10.5px",
+                                color: "var(--accent-cyan)",
+                                background: "var(--accent-cyan-bg)",
+                                padding: "1px 6px",
+                                borderRadius: "4px"
                               }}
                             >
                               {tag}
@@ -159,14 +161,23 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     </span>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <button 
-                      onClick={() => onDeleteTransaction(tx.id)}
-                      style={{ padding: "4px 8px", background: "transparent", border: "none", color: "var(--expense-rose)", cursor: "pointer" }} 
-                      title="Delete Transaction"
-                      id={`btn-delete-${tx.id}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div style={{ display: "flex", justifyContent: "center", gap: "4px" }}>
+                      <button
+                        onClick={() => onEditTransaction(tx)}
+                        style={{ padding: "4px 6px", background: "transparent", border: "none", color: "var(--accent-cyan)", cursor: "pointer" }}
+                        title="Edit Transaction"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => onDeleteTransaction(tx.id)}
+                        style={{ padding: "4px 6px", background: "transparent", border: "none", color: "var(--expense-rose)", cursor: "pointer" }}
+                        title="Delete Transaction"
+                        id={`btn-delete-${tx.id}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
