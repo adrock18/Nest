@@ -226,3 +226,33 @@ Whenever a new file or directory is introduced, we will:
 2. Document **why** that file was added and what responsibilities it holds.
 3. Keep an accurate record of modifications so you retain 100% visibility over your project before staging any Git commits.
 
+---
+
+## 8. Independent V1 Feature Workstreams
+
+The current iteration implements only the UI cleanup in layout A. The other
+workstreams below are separately scoped follow-ups, not completed features.
+
+| Feature | Ownership | Acceptance / boundary |
+|---|---|---|
+| UI shell & compact overview | `src/components/Header.tsx`, `src/components/Sidebar.tsx`, `src/views/DashboardView.tsx`, shell/dashboard CSS | Neutral four-card monthly summary; green income, red expense, blue positive savings; spending + budgets next, accounts last; header sun/moon toggle; dark/light and minimum-window checks. Implemented. |
+| Income & expense ledger clarity | `src/views/TransactionsView.tsx`, transaction entry components, ledger-specific CSS | Explicit income/expense language, category/account filtering, visible filtered totals, clear entry/edit actions. Pending separate feature. |
+| Category spending workspaces | `src/views/BudgetsView.tsx`, category-specific components and CSS | Category budget, spent, remaining, related ledger entries, and category-prefilled Add expense. Reuse existing category, budget, and transaction records. Pending separate feature. |
+| Accounts & data safety | `src/views/SettingsView.tsx`, account entry, native persistence and tests | Account UX, backup/restore drill and Windows installer acceptance. Pending separate feature. |
+
+### Parallel implementation contract
+
+- Keep feature-specific UI and CSS scoped to its workstream; coordinate any
+  shared theme token changes rather than editing the same shell styles in parallel.
+- `src/App.tsx`, `src/services/api.ts`, `src/types/index.ts`, shared finance
+  helpers, and numbered migrations are integration-owned. Agree their contracts
+  before parallel branches change them.
+- Monthly views use the selected month. Account balances and full-history
+  exports remain all-date. All features preserve whole-paise money and local
+  calendar validation.
+- Category workspaces use the household ledger rather than cloning Travel's
+  trips, companions, itemized splits, or settlement tables. Existing Travel is
+  unchanged. Specialist inventory, billing schedules, or forecasting are not
+  part of this UI cleanup.
+- Layout A is selected for this iteration. Category-first layout B and
+  ledger-first layout C remain review options, not simultaneous implementations.

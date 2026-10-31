@@ -45,11 +45,14 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
         <div>
           <div className="eyebrow">YOUR MONTH, AT A GLANCE</div>
           <h2>{formatMonthLabel(selectedMonth)}</h2>
-          <p>A clearer picture of what came in, what went out, and what stayed.</p>
+          <p>{transactionCount} recorded {transactionCount === 1 ? "entry" : "entries"} · Monthly income, expenses, and savings.</p>
         </div>
-        <span className={`dashboard-status ${!hasActivity ? "neutral" : deficit || alerts.some((b) => b.isOver) ? "danger" : alerts.length > 0 ? "warning" : "healthy"}`}>
+        <div className="dashboard-heading-actions">
+          <button className="text-button" onClick={onNavigateToTransactions}>View entries <ArrowRight size={14} /></button>
+          <span className={`dashboard-status ${!hasActivity ? "neutral" : deficit || alerts.some((b) => b.isOver) ? "danger" : alerts.length > 0 ? "warning" : "healthy"}`}>
           <span className="status-indicator-dot" />{status}
-        </span>
+          </span>
+        </div>
       </div>
 
       {!hasActivity && (
@@ -60,53 +63,30 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
         </div>
       )}
 
-      <section className="cashflow-hero" aria-label="Monthly cash flow">
-        <div className="cashflow-main">
-          <span className="eyebrow">MONTHLY NET SAVINGS</span>
-          <div className={`cashflow-value ${deficit ? "deficit" : ""}`} id="val-net-savings">
-            {formatPaiseToRupees(summary.netSavingsPaise)}
-          </div>
-          <p>{!hasActivity ? "Your monthly story starts here." : deficit ? "Spending exceeded recorded income this month."
-            : "Income left after this month's recorded spending."}</p>
-          <button className="hero-link" onClick={onNavigateToTransactions}>Explore your ledger <ArrowRight size={16} /></button>
+      <section className="dashboard-grid monthly-summary" aria-label="Monthly cash flow">
+        <div className="metric-card accent-income">
+          <div className="metric-header"><span className="metric-label">Income</span><ArrowDownLeft size={17} /></div>
+          <div className="metric-value income" id="val-total-inflow">{formatPaiseToRupees(summary.totalInflowPaise)}</div>
+          <div className="metric-subtext">Money received this month</div>
         </div>
-        <div className="cashflow-side">
-          <div className="cashflow-line">
-            <div className="flow-icon income"><ArrowDownLeft size={19} /></div>
-            <div><span>Money in</span><strong id="val-total-inflow">{formatPaiseToRupees(summary.totalInflowPaise)}</strong></div>
-          </div>
-          <div className="cashflow-line">
-            <div className="flow-icon expense"><ArrowUpRight size={19} /></div>
-            <div><span>Money out</span><strong id="val-total-outflow">{formatPaiseToRupees(summary.totalOutflowPaise)}</strong></div>
-          </div>
-          <div className="cashflow-footnote">{transactionCount} recorded {transactionCount === 1 ? "transaction" : "transactions"} this month</div>
+        <div className="metric-card accent-expense">
+          <div className="metric-header"><span className="metric-label">Expenses</span><ArrowUpRight size={17} /></div>
+          <div className="metric-value expense" id="val-total-outflow">{formatPaiseToRupees(summary.totalOutflowPaise)}</div>
+          <div className="metric-subtext">Money spent this month</div>
         </div>
-      </section>
-
-      <div className="dashboard-grid">
-        <div className="metric-card accent-savings">
+        <div className={`metric-card accent-savings ${deficit ? "has-deficit" : ""}`}>
+          <div className="metric-header"><span className="metric-label">Net savings</span><PiggyBank size={17} /></div>
+          <div className={`metric-value ${deficit ? "expense" : "savings"}`} id="val-net-savings">{formatPaiseToRupees(summary.netSavingsPaise)}</div>
+          <div className="metric-subtext">{deficit ? "Expenses exceed income" : "Income minus expenses"}</div>
+        </div>
+        <div className={`metric-card accent-rate ${deficit ? "has-deficit" : ""}`}>
           <div className="metric-header"><span className="metric-label">Savings rate</span><Percent size={17} /></div>
-          <div className={`metric-value ${deficit ? "expense" : "income"}`} id="val-savings-rate">
+          <div className={`metric-value ${deficit ? "expense" : "savings"}`} id="val-savings-rate">
             {summary.totalInflowPaise > 0 ? `${summary.savingsRatePercentage.toFixed(1)}%` : "—"}
           </div>
           <div className="metric-subtext">{summary.totalInflowPaise > 0 ? "Net savings as a share of income" : "Record income to calculate this"}</div>
         </div>
-        <div className="metric-card accent-cash">
-          <div className="metric-header"><span className="metric-label">Liquid balance</span><Wallet size={17} /></div>
-          <div className="metric-value">{formatPaiseToRupees(liquidCashPaise)}</div>
-          <div className="metric-subtext">Bank + cash · all recorded dates</div>
-        </div>
-        <div className="metric-card accent-credit">
-          <div className="metric-header"><span className="metric-label">Card dues</span><CreditCard size={17} /></div>
-          <div className="metric-value">{formatPaiseToRupees(creditDebtPaise)}</div>
-          <div className="metric-subtext">Recorded outstanding credit balance</div>
-        </div>
-        <div className="metric-card accent-budget">
-          <div className="metric-header"><span className="metric-label">Budget left</span><Target size={17} /></div>
-          <div className="metric-value">{formatPaiseToRupees(remainingPaise)}</div>
-          <div className="metric-subtext">{budgets.length > 0 ? `Of ${formatPaiseToRupees(allocatedPaise)} allocated` : "Set a category limit to get started"}</div>
-        </div>
-      </div>
+      </section>
 
       {(alerts.length > 0 || deficit) && (
         <div className="budget-alert">
@@ -153,6 +133,10 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
         <section className="panel-card">
           <div className="panel-header"><h3 className="panel-title">Budget check-in</h3>
             <button className="text-button" onClick={onNavigateToBudgets}>Manage <ArrowRight size={14} /></button></div>
+          {budgets.length > 0 && <div className="budget-remaining-summary">
+            <span>Remaining in category budgets</span><strong className="font-mono">{formatPaiseToRupees(remainingPaise)}</strong>
+            <small>Of {formatPaiseToRupees(allocatedPaise)} planned for the month</small>
+          </div>}
           {budgetRows.length === 0 ? (
             <div className="empty-state"><Target size={28} /><h3>Give your spending a plan</h3><p>Add your first category budget.</p>
               <button className="btn-secondary" onClick={onNavigateToBudgets}>Set a budget</button></div>
@@ -179,14 +163,18 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
 
       <section className="panel-card accounts-panel">
         <div className="panel-header"><div><h3 className="panel-title">Your accounts</h3><p className="panel-note">Current balances across all recorded dates, independent of the selected month.</p></div>
-          <div className="account-net"><span>Net position</span><strong className="font-mono">{formatPaiseToRupees(netCashPositionPaise)}</strong></div></div>
+          <div className="account-net"><span>Net position</span><strong className={`font-mono ${netCashPositionPaise < 0 ? "number-expense" : "number-balance"}`}>{formatPaiseToRupees(netCashPositionPaise)}</strong></div></div>
+        <div className="account-position-summary">
+          <span>Bank + cash <strong className={`font-mono ${liquidCashPaise < 0 ? "number-expense" : "number-balance"}`}>{formatPaiseToRupees(liquidCashPaise)}</strong></span>
+          <span>Card dues <strong className="font-mono number-expense">{formatPaiseToRupees(creditDebtPaise)}</strong></span>
+        </div>
         <div className="account-card-grid">
           {accounts.map((account) => {
             const Icon = account.type === "credit" ? CreditCard : account.type === "bank" ? Landmark : Banknote;
             const balance = accountBalances[account.id];
             return <div className={`account-summary ${account.type}`} key={account.id}>
               <div className="account-summary-title"><Icon size={18} /><span>{account.name}</span></div>
-              <strong className="font-mono">{formatPaiseToRupees(account.type === "credit" ? Math.max(0, -balance) : balance)}</strong>
+              <strong className={`font-mono ${account.type === "credit" || balance < 0 ? "number-expense" : "number-balance"}`}>{formatPaiseToRupees(account.type === "credit" ? Math.max(0, -balance) : balance)}</strong>
               <small>{account.type === "credit" ? balance > 0 ? `${formatPaiseToRupees(balance)} card credit` : "Outstanding dues" : account.type === "bank" ? "Bank balance" : "Cash in hand"}</small>
             </div>;
           })}

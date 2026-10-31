@@ -5,9 +5,7 @@ import {
   Target, 
   Compass,
   Settings, 
-  Wallet,
-  Sun,
-  Moon
+  Wallet
 } from "lucide-react";
 import { isTauriDesktop } from "../services/api";
 
@@ -16,15 +14,11 @@ export type NavTab = "dashboard" | "transactions" | "budgets" | "travel" | "sett
 interface SidebarProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
-  theme: "dark" | "light";
-  onToggleTheme: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
   activeTab, 
-  onSelectTab,
-  theme,
-  onToggleTheme
+  onSelectTab
 }) => {
   const navItems = [
     {
@@ -98,31 +92,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Sidebar Footer: Theme Toggle & Local-First Indicator */}
+      {/* Local-first status */}
       <div className="sidebar-footer">
-        {/* Theme Switcher Toggle */}
-        <div className="theme-toggle-container">
-          <span className="theme-toggle-label">Appearance</span>
-          <button 
-            id="btn-toggle-theme-sidebar"
-            className="theme-toggle-btn"
-            onClick={onToggleTheme}
-            title={`Switch to ${theme === "dark" ? "Light" : "Dark"} mode`}
-          >
-            {theme === "dark" ? (
-              <>
-                <Sun size={13} color="var(--warning-amber)" />
-                <span>Light</span>
-              </>
-            ) : (
-              <>
-                <Moon size={13} color="var(--accent-cyan)" />
-                <span>Dark</span>
-              </>
-            )}
-          </button>
-        </div>
-
         {/* Local-First Indicator */}
         <div className="status-badge" title={isTauriDesktop() ? "Data is stored in your local SQLite database" : "Browser preview uses localStorage, not the desktop database"}>
           <div className="status-indicator-dot" />

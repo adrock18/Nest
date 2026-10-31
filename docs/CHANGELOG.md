@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Expressive dark/light V1 dashboard with a monthly cash-flow hero, spending
+- Compact dark/light V1 dashboard with a neutral monthly summary, spending
   distribution ring, budget check-ins, and individual account cards.
 - Account-name transaction search, date/amount sorting, useful empty states, and
   a separate budget form for existing expense categories.
@@ -39,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Browser preview no longer claims to create SQLite backups.
 
 ### Changed
+- Adopted compact layout A: income, expenses, net savings, and savings rate
+  appear in equal neutral cards; removed the large green savings hero.
+- Colored income green, expenses red, and positive savings/balances blue.
+  Account totals remain visible below monthly spending and budget panels.
+- Moved appearance control to an accessible icon-only sun/moon header button.
+  The sidebar footer now contains only storage/privacy status.
+- Split remaining V1 work into independently scoped ledger clarity, category
+  spending workspaces, and accounts/data-safety acceptance features.
 - Replaced speculative cash-runway and safe-to-spend claims with recorded
   balances and budget remaining. Recurring spending is already included in
   expenses and is not deducted again.

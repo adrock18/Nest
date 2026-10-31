@@ -51,8 +51,8 @@
   * **Dual-Theme Engine**:
     * **Obsidian Dark Mode**: Layered graphite surfaces (`#0d1117` canvas, `#131822` elevated surfaces), translucent borders, and ambient shadows.
     * **Alabaster Light Mode**: Low-glare canvas (`#f9fafb`), white cards (`#ffffff`), and charcoal typography (`#111827`).
-    * **Expressive Dashboard**: Emerald-to-blue monthly cash-flow hero, semantic income/expense colors, spending distribution ring, budget check-ins, and account cards. Motion respects system preferences.
-    * **Theme Persistence**: Instant toggle stored in local configuration.
+    * **Compact Dashboard (Layout A)**: Neutral four-card monthly summary followed by spending and budget panels, with account balances last. Income figures are green, expenses red, and positive savings/balances blue. Deficits remain red. Motion respects system preferences.
+    * **Theme Persistence**: Icon-only sun/moon control in the top header; preference retained in local configuration. The icon indicates the theme the button switches to.
   * **Typography**: Professional typography via **Inter** (clean UI labels) and **JetBrains Mono** (monospace tabular figures for currency).
 * **Navigation Architecture**:
   * Fixed 250px left sidebar with tab routing: **Dashboard**, **Transactions**, **Budgets**, **Settings & Backups**.

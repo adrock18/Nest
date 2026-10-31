@@ -1,13 +1,13 @@
 import React from "react";
-import { Calendar, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, Plus, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import { NavTab } from "./Sidebar";
 import { formatMonthLabel } from "../utils/dates";
 
 interface HeaderProps {
   activeTab: NavTab;
   onOpenAddTransaction: () => void;
-  theme?: "dark" | "light";
-  onToggleTheme?: () => void;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
   selectedMonth: string; // "YYYY-MM"
   onChangeMonth: (month: string) => void;
 }
@@ -23,6 +23,8 @@ function shiftMonth(ym: string, delta: number): string {
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onOpenAddTransaction,
+  theme,
+  onToggleTheme,
   selectedMonth,
   onChangeMonth
 }) => {
@@ -45,6 +47,15 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="header-right">
+        <button
+          id="btn-toggle-theme-header"
+          className="header-theme-toggle"
+          onClick={onToggleTheme}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
         {/* Month Selector */}
         <div className="month-picker-pill" style={{ display: "flex", alignItems: "center", gap: "4px", userSelect: "none" }}>
           <button

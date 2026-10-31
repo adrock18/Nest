@@ -10,8 +10,11 @@
 
 ## V1 Workspace Improvements
 
-- **Clear monthly overview**: A colorful cash-flow hero, spending distribution,
-  budget alerts, and account cards work in both dark and light mode.
+- **Compact monthly overview**: Neutral income, expense, net-savings, and
+  savings-rate cards use semantic number colors. Spending and budget panels
+  follow, then all-date account balances, in both dark and light mode.
+- **Quick appearance control**: The header sun/moon button switches theme and
+  retains your preference; the sidebar footer is reserved for storage status.
 - **Correct time scope**: The selected month controls income, spending, and
   transaction views. Account balances and Settings exports always include all
   recorded dates.
@@ -30,6 +33,8 @@ Run `npm test` for finance and browser-storage regressions, `npm run build` for
 the frontend, and `cargo test --manifest-path src-tauri/Cargo.toml` for native
 SQLite validation. A passing build is not installer/restore-drill acceptance:
 those remain separate V1 release checks.
+Independent V1 workstreams and their ownership boundaries are tracked in
+[`V1_TRACKER.md`](docs/V1_TRACKER.md#8-independent-v1-feature-workstreams).
 
 ---
 
