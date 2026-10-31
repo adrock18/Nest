@@ -42,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: "travel" as NavTab,
-      label: "Travel Expenses",
+      label: "Travel",
       icon: Compass,
       elementId: "nav-tab-travel"
     },

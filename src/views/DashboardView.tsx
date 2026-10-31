@@ -102,7 +102,7 @@ export function DashboardView({ summary, categoryBreakdown, budgets, accounts, a
             <small>{workspace.travelPaise > 0 ? `${formatPaiseToRupees(workspace.travelPaise)} from travel` : "Open monthly dashboard"}</small>
           </button>)}
           <button className="workspace-launch-card workspace-travel" onClick={onNavigateToTravel}>
-            <span>Travel Expenses<ArrowRight size={14} /></span><strong className="font-mono">{formatPaiseToRupees(travelPersonalPaise)}</strong>
+            <span>Travel<ArrowRight size={14} /></span><strong className="font-mono">{formatPaiseToRupees(travelPersonalPaise)}</strong>
             <small>Your trip shares · Overlaps category views</small>
           </button>
         </div>
