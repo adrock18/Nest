@@ -110,7 +110,7 @@
 .travel-rail-name { font-size: 13.5px; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .travel-rail-total { font-size: 12.5px; font-weight: 700; color: var(--income-emerald); }
 .travel-rail-dates { font-size: 11.5px; color: var(--text-muted); }
-.travel-rail-budget-track { width: 100%; height: 4px; background: var(--bg-surface); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.travel-rail-budget-track { width: 100%; height: 4px; background: var(--border-medium); border-radius: 2px; overflow: hidden; margin-top: 2px; }
 .travel-rail-budget-bar { height: 100%; border-radius: 2px; }
 
 .travel-trip-detail { overflow: hidden; min-width: 0; }
