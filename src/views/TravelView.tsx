@@ -43,6 +43,7 @@ interface TravelViewProps {
   onUpdateTrip: (trip: Trip) => Promise<void>;
   onDeleteTrip: (id: string) => void;
   onAddExpense: (expense: Omit<TripExpense, "id">) => Promise<void>;
+  onUpdateExpense: (expense: TripExpense) => Promise<void>;
   onDeleteExpense: (id: string) => void;
   focusTrip: { tripId: string; expenseId?: string } | null;
   onNavigateToWorkspace: (workspaceId: WorkspaceId, month?: string) => void;
@@ -58,6 +59,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
   onUpdateTrip,
   onDeleteTrip,
   onAddExpense,
+  onUpdateExpense,
   onDeleteExpense,
   focusTrip,
   onNavigateToWorkspace
@@ -72,6 +74,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
   const [isAddTripModalOpen, setIsAddTripModalOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [activeModalTrip, setActiveModalTrip] = useState<Trip | null>(null);
+  const [editingExpense, setEditingExpense] = useState<TripExpense | null>(null);
   const [copiedTripId, setCopiedTripId] = useState<string | null>(null);
 
   // Search & filter query for trips
@@ -114,6 +117,13 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
   const handleOpenAddExpense = (trip: Trip, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    setEditingExpense(null);
+    setActiveModalTrip(trip);
+  };
+
+  const handleOpenEditExpense = (trip: Trip, expense: TripExpense, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingExpense(expense);
     setActiveModalTrip(trip);
   };
 
@@ -187,76 +197,42 @@ export const TravelView: React.FC<TravelViewProps> = ({
   return (
     <div className="view-content-wrapper travel-workspace">
       {/* 1. Header Toolbar */}
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: "14px",
-        marginBottom: "20px"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            width: "38px",
-            height: "38px",
-            borderRadius: "10px",
-            background: "rgba(6, 182, 212, 0.12)",
-            border: "1px solid rgba(6, 182, 212, 0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#06b6d4"
-          }}>
+      <div className="travel-toolbar">
+        <div className="travel-toolbar-identity">
+          <div className="travel-toolbar-icon">
             <Compass size={20} strokeWidth={2.2} />
           </div>
           <div>
-            <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-main)", margin: 0, lineHeight: 1.2 }}>
-              Travel Expenses
+            <h1 className="travel-toolbar-title">
+              Travel
             </h1>
-            <p style={{ fontSize: "12.5px", color: "var(--text-muted)", margin: "3px 0 0", lineHeight: 1.2 }}>
+            <p className="travel-toolbar-subtitle">
               {formatMonthLabel(month)} · Personal shares, group bills, and trip budgets
             </p>
           </div>
         </div>
 
         {/* Right Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div className="travel-toolbar-actions">
           {/* Quick Search */}
           {trips.length > 1 && (
-            <div style={{ position: "relative" }}>
-              <Search size={14} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+            <div className="travel-trip-search">
+              <Search size={14} className="travel-search-icon" />
               <input 
                 type="text"
                 placeholder="Search trips..."
                 aria-label="Search trips"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  padding: "7px 12px 7px 30px",
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-medium)",
-                  borderRadius: "8px",
-                  color: "var(--text-main)",
-                  fontSize: "12.5px",
-                  outline: "none",
-                  width: "180px"
-                }}
+                className="travel-search-input"
               />
             </div>
           )}
 
           <button 
             id="btn-create-trip"
-            className="btn-primary"
+            className="btn-primary travel-toolbar-create"
             onClick={() => setIsAddTripModalOpen(true)}
-            style={{
-              padding: "8px 18px",
-              fontSize: "13px",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "7px"
-            }}
           >
             <Plus size={16} strokeWidth={2.4} />
             <span>Create New Trip</span>
@@ -278,32 +254,14 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
       {/* 2. Empty State */}
       {(!trips || trips.length === 0) ? (
-        <div style={{
-          padding: "60px 24px",
-          textAlign: "center",
-          background: "var(--bg-card)",
-          borderRadius: "16px",
-          border: "1px dashed var(--border-medium)",
-          maxWidth: "580px",
-          margin: "40px auto"
-        }}>
-          <div style={{
-            width: "56px",
-            height: "56px",
-            borderRadius: "50%",
-            background: "rgba(6, 182, 212, 0.12)",
-            color: "#06b6d4",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            margin: "0 auto 16px"
-          }}>
+        <div className="travel-empty">
+          <div className="travel-empty-icon">
             <Compass size={28} />
           </div>
-          <h2 style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-main)", marginBottom: "8px" }}>
+          <h2 className="travel-empty-title">
             No Trips Recorded Yet
           </h2>
-          <p style={{ fontSize: "13.5px", color: "var(--text-secondary)", marginBottom: "22px", lineHeight: "1.6" }}>
+          <p className="travel-empty-text">
             Create a trip to track vacation spending, daily budgets, rides & activities, fuel costs, and companion split settlements.
           </p>
           <button 
@@ -317,7 +275,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
         </div>
       ) : (
         /* 3. Collapsible Accordion Trips List */
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div className="travel-trip-list">
           {filteredTrips.map((trip) => {
             const isExpanded = !!expandedTripIds[trip.id];
             const tripExpList = (tripExpenses || []).filter((e) => e.tripId === trip.id);
@@ -343,38 +301,28 @@ export const TravelView: React.FC<TravelViewProps> = ({
               <div 
                 key={trip.id}
                 id={`trip-card-${trip.id}`}
+                className="travel-trip-card"
                 style={{
                   background: "var(--bg-surface)",
                   border: isExpanded ? `1px solid ${themeColor}55` : "1px solid var(--border-medium)",
-                  borderRadius: "14px",
-                  overflow: "hidden",
                   boxShadow: isExpanded 
                     ? "0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)" 
-                    : "0 2px 8px rgba(0, 0, 0, 0.2)",
-                  transition: "all 0.2s ease"
+                    : "0 2px 8px rgba(0, 0, 0, 0.2)"
                 }}
               >
                 {/* Collapsed Header Bar (Always Visible, Clickable) */}
                 <div 
                   onClick={() => toggleTripExpand(trip.id)}
+                  className="travel-trip-header"
                   style={{
-                    padding: "16px 20px",
                     background: isExpanded ? "var(--bg-card)" : "var(--bg-surface)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    cursor: "pointer",
-                    userSelect: "none",
-                    borderLeft: `5px solid ${themeColor}`,
-                    flexWrap: "wrap",
-                    gap: "16px",
-                    transition: "background 0.15s ease"
+                    borderLeft: `5px solid ${themeColor}`
                   }}
                 >
                   {/* Left: Trip Name, Location, Dates, Companions */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "260px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <h3 style={{ fontSize: "16.5px", fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
+                  <div className="travel-trip-header-left">
+                    <div className="travel-trip-title-row">
+                      <h3 className="travel-trip-title">
                         {trip.name}
                       </h3>
                       <span style={{
@@ -390,18 +338,18 @@ export const TravelView: React.FC<TravelViewProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", fontSize: "12.5px", color: "var(--text-secondary)" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <div className="travel-trip-meta">
+                      <span className="travel-trip-meta-item">
                         <MapPin size={13} color={themeColor} />
                         <strong style={{ color: "var(--text-main)" }}>{trip.destination}</strong>
                       </span>
                       <span>•</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span className="travel-trip-meta-item">
                         <Calendar size={13} color="var(--text-muted)" />
                         {formatTripDateRange(trip.startDate, trip.endDate)}
                       </span>
                       <span>•</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span className="travel-trip-meta-item">
                         <Users size={13} color="var(--text-muted)" />
                         {trip.members.length} {trip.members.length === 1 ? "Person" : "Companions"}
                       </span>
@@ -409,16 +357,16 @@ export const TravelView: React.FC<TravelViewProps> = ({
                   </div>
 
                   {/* Right: Total Spending, Actions & Expand Chevron */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+                  <div className="travel-trip-header-right">
                     {/* Total Spending Metric Block */}
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    <div className="travel-trip-total">
+                      <div className="travel-trip-total-label">
                         Total Spending
                       </div>
-                      <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--income-emerald)", fontFamily: "var(--font-mono)" }}>
+                      <div className="travel-trip-total-value">
                         {formatPaiseToRupees(summary.totalSpentPaise)}
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      <div className="travel-trip-total-sub">
                         {summary.budgetUsedPct > 0 
                           ? `${summary.budgetUsedPct}% of budget` 
                           : `${formatPaiseToRupees(summary.dailyAveragePaise)} / day`}
@@ -428,16 +376,8 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     {/* Quick Add Expense Button */}
                     <button
                       type="button"
-                      className="btn-secondary"
+                      className="btn-secondary travel-trip-action-btn"
                       onClick={(e) => handleOpenAddExpense(trip, e)}
-                      style={{
-                        padding: "6px 12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px"
-                      }}
                       title="Add an expense to this trip"
                     >
                       <Plus size={14} />
@@ -447,18 +387,10 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     {/* Edit Trip Button */}
                     <button
                       type="button"
-                      className="btn-secondary"
+                      className="btn-secondary travel-trip-action-btn"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingTrip(trip);
-                      }}
-                      style={{
-                        padding: "6px 12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px"
                       }}
                       title="Edit trip details (destination, dates, budget, companions)"
                     >
@@ -469,31 +401,17 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     {/* Delete Trip */}
                     <button
                       type="button"
+                      className="travel-icon-btn"
                       onClick={(e) => handleDeleteTripWithConfirm(trip, e)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        padding: "6px",
-                        borderRadius: "6px"
-                      }}
                       title="Delete trip"
                     >
                       <Trash2 size={15} />
                     </button>
 
                     {/* Expand/Collapse Chevron Indicator */}
-                    <div style={{
-                      width: "30px",
-                      height: "30px",
-                      borderRadius: "8px",
+                    <div className="travel-trip-chevron" style={{
                       background: isExpanded ? "var(--bg-surface-hover)" : "transparent",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: isExpanded ? "var(--text-main)" : "var(--text-muted)",
-                      transition: "transform 0.2s ease"
+                      color: isExpanded ? "var(--text-main)" : "var(--text-muted)"
                     }}>
                       {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </div>
@@ -502,18 +420,9 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
                 {/* Expanded Detailed Workspace for this Trip */}
                 {isExpanded && (
-                  <div style={{
-                    padding: "20px 24px",
-                    borderTop: "1px solid var(--border-subtle)",
-                    background: "var(--bg-surface)"
-                  }}>
+                  <div className="travel-trip-body">
                     {/* 4 Hero KPI Cards */}
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                      gap: "14px",
-                      marginBottom: "20px"
-                    }}>
+                    <div className="travel-kpi-grid">
                       {/* Card 1: Total Spent */}
                       <div className="metric-card" style={{ padding: "14px 16px" }}>
                         <div className="metric-header">
@@ -593,76 +502,48 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     </div>
 
                     {/* Subtab Navigation Bar */}
-                    <div style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      borderBottom: "1px solid var(--border-medium)",
-                      marginBottom: "18px",
-                      flexWrap: "wrap",
-                      gap: "10px"
-                    }}>
-                      <div style={{ display: "flex", gap: "6px" }}>
+                    <div className="travel-subtab-nav">
+                      <div className="travel-subtab-tabs">
                         <button
                           type="button"
+                          className="travel-subtab-btn"
                           onClick={() => setSubTab(trip.id, "overview")}
                           style={{
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            background: "transparent",
-                            border: "none",
                             borderBottom: subTab === "overview" ? `2px solid ${themeColor}` : "2px solid transparent",
-                            color: subTab === "overview" ? "var(--text-main)" : "var(--text-muted)",
-                            cursor: "pointer"
+                            color: subTab === "overview" ? "var(--text-main)" : "var(--text-muted)"
                           }}
                         >
                           Overview & Categories
                         </button>
                         <button
                           type="button"
+                          className="travel-subtab-btn"
                           onClick={() => setSubTab(trip.id, "daily")}
                           style={{
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            background: "transparent",
-                            border: "none",
                             borderBottom: subTab === "daily" ? `2px solid ${themeColor}` : "2px solid transparent",
-                            color: subTab === "daily" ? "var(--text-main)" : "var(--text-muted)",
-                            cursor: "pointer"
+                            color: subTab === "daily" ? "var(--text-main)" : "var(--text-muted)"
                           }}
                         >
                           Daily Timeline
                         </button>
                         <button
                           type="button"
+                          className="travel-subtab-btn"
                           onClick={() => setSubTab(trip.id, "split")}
                           style={{
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            background: "transparent",
-                            border: "none",
                             borderBottom: subTab === "split" ? `2px solid ${themeColor}` : "2px solid transparent",
-                            color: subTab === "split" ? "var(--text-main)" : "var(--text-muted)",
-                            cursor: "pointer"
+                            color: subTab === "split" ? "var(--text-main)" : "var(--text-muted)"
                           }}
                         >
                           Split & Debts
                         </button>
                         <button
                           type="button"
+                          className="travel-subtab-btn"
                           onClick={() => setSubTab(trip.id, "ledger")}
                           style={{
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            background: "transparent",
-                            border: "none",
                             borderBottom: subTab === "ledger" ? `2px solid ${themeColor}` : "2px solid transparent",
-                            color: subTab === "ledger" ? "var(--text-main)" : "var(--text-muted)",
-                            cursor: "pointer"
+                            color: subTab === "ledger" ? "var(--text-main)" : "var(--text-muted)"
                           }}
                         >
                           All Expenses ({tripExpList.length})
@@ -670,7 +551,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
                       </div>
 
                       {/* Right Subtab Actions */}
-                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <div className="travel-subtab-actions">
                         <button
                           type="button"
                           className="btn-secondary"
@@ -719,22 +600,17 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
                     {/* Subtab Content 1: Overview & Categories */}
                     {subTab === "overview" && (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "20px" }}>
+                      <div className="travel-grid-2">
                         {/* Category Spend Distribution */}
-                        <div style={{
-                          background: "var(--bg-card)",
-                          border: "1px solid var(--border-subtle)",
-                          borderRadius: "12px",
-                          padding: "16px 20px"
-                        }}>
-                          <h4 style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text-main)", marginBottom: "14px" }}>
+                        <div className="travel-inner-card">
+                          <h4 className="travel-inner-card-title">
                             Spending by Category
                           </h4>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                          <div className="travel-stack">
                             {summary.categoryBreakdown.map((item) => (
                               <div key={item.category}>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", marginBottom: "4px" }}>
-                                  <span style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-main)" }}>
+                                <div className="travel-cat-row-header">
+                                  <span className="travel-cat-row-label">
                                     {renderCategoryIcon(item.category)}
                                     {item.label}
                                   </span>
@@ -742,8 +618,8 @@ export const TravelView: React.FC<TravelViewProps> = ({
                                     {formatPaiseToRupees(item.spentPaise)} ({item.pct}%)
                                   </span>
                                 </div>
-                                <div style={{ width: "100%", height: "6px", background: "var(--bg-surface)", borderRadius: "3px", overflow: "hidden" }}>
-                                  <div style={{ width: `${item.pct}%`, height: "100%", background: item.color, borderRadius: "3px" }} />
+                                <div className="travel-cat-track">
+                                  <div className="travel-cat-bar" style={{ width: `${item.pct}%`, background: item.color }} />
                                 </div>
                               </div>
                             ))}
@@ -751,34 +627,21 @@ export const TravelView: React.FC<TravelViewProps> = ({
                         </div>
 
                         {/* Trip Companions & Summary */}
-                        <div style={{
-                          background: "var(--bg-card)",
-                          border: "1px solid var(--border-subtle)",
-                          borderRadius: "12px",
-                          padding: "16px 20px"
-                        }}>
-                          <h4 style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text-main)", marginBottom: "14px" }}>
+                        <div className="travel-inner-card">
+                          <h4 className="travel-inner-card-title">
                             Trip Companions & Activity
                           </h4>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <div className="travel-stack-tight">
                             {summary.memberBalances.map((m) => (
-                              <div key={m.member} style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "8px 12px",
-                                background: "var(--bg-surface)",
-                                borderRadius: "8px",
-                                fontSize: "12.5px"
-                              }}>
-                                <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                              <div key={m.member} className="travel-member-row">
+                                <span className="travel-member-name">
                                   {m.member === "Me" ? "👤 Me (You)" : m.member}
                                 </span>
                                 <div style={{ textAlign: "right" }}>
-                                  <span className="font-mono" style={{ color: "var(--text-main)", fontWeight: 600 }}>
+                                  <span className="font-mono travel-member-paid">
                                     Paid {formatPaiseToRupees(m.paidPaise)}
                                   </span>
-                                  <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                                  <div className="travel-member-share">
                                     Share: {formatPaiseToRupees(m.sharePaise)}
                                   </div>
                                 </div>
@@ -791,45 +654,29 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
                     {/* Subtab Content 2: Daily Spending Timeline */}
                     {subTab === "daily" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div className="travel-stack-tight">
                         {summary.perDaySpending.length === 0 ? (
-                          <div style={{ padding: "30px", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
+                          <div className="travel-day-empty">
                             No daily expenses logged yet.
                           </div>
                         ) : (
                           summary.perDaySpending.map((day) => (
-                            <div 
-                              key={day.date}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "12px 16px",
-                                background: "var(--bg-card)",
-                                border: "1px solid var(--border-subtle)",
-                                borderRadius: "10px"
-                              }}
-                            >
+                            <div key={day.date} className="travel-day-row">
                               <div>
-                                <span style={{
-                                  fontSize: "11px",
-                                  fontWeight: 700,
+                                <span className="travel-day-badge" style={{
                                   color: themeColor,
-                                  background: `${themeColor}15`,
-                                  padding: "2px 8px",
-                                  borderRadius: "4px",
-                                  marginRight: "10px"
+                                  background: `${themeColor}15`
                                 }}>
                                   Day {day.dayIndex}
                                 </span>
-                                <strong style={{ fontSize: "13.5px", color: "var(--text-main)" }}>
+                                <strong className="travel-day-date">
                                   {day.date}
                                 </strong>
-                                <span style={{ fontSize: "12px", color: "var(--text-muted)", marginLeft: "10px" }}>
+                                <span className="travel-day-count">
                                   ({day.count} {day.count === 1 ? "expense" : "expenses"})
                                 </span>
                               </div>
-                              <div className="font-mono" style={{ fontSize: "15px", fontWeight: 700, color: "var(--income-emerald)" }}>
+                              <div className="font-mono travel-day-total">
                                 {formatPaiseToRupees(day.totalPaise)}
                               </div>
                             </div>
@@ -840,41 +687,27 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
                     {/* Subtab Content 3: Split & Debts */}
                     {subTab === "split" && (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
+                      <div className="travel-grid-2-wide">
                         {/* Member Balances */}
-                        <div style={{
-                          background: "var(--bg-card)",
-                          border: "1px solid var(--border-subtle)",
-                          borderRadius: "12px",
-                          padding: "16px 20px"
-                        }}>
-                          <h4 style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text-main)", marginBottom: "12px" }}>
+                        <div className="travel-inner-card">
+                          <h4 className="travel-inner-card-title" style={{ marginBottom: "12px" }}>
                             Net Balances
                           </h4>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <div className="travel-stack-tight">
                             {summary.memberBalances.map((b) => {
                               const isPositive = b.netPaise > 0;
                               const isNegative = b.netPaise < 0;
                               return (
-                                <div key={b.member} style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  padding: "10px 12px",
-                                  background: "var(--bg-surface)",
-                                  borderRadius: "8px"
-                                }}>
+                                <div key={b.member} className="travel-balance-row">
                                   <div>
-                                    <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>
+                                    <strong className="travel-balance-name">
                                       {b.member === "Me" ? "👤 Me" : b.member}
                                     </strong>
-                                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                                    <div className="travel-balance-sub">
                                       Paid: {formatPaiseToRupees(b.paidPaise)} | Share: {formatPaiseToRupees(b.sharePaise)}
                                     </div>
                                   </div>
-                                  <div className="font-mono" style={{
-                                    fontSize: "14px",
-                                    fontWeight: 700,
+                                  <div className="font-mono travel-balance-net" style={{
                                     color: isPositive ? "var(--income-emerald)" : isNegative ? "var(--expense-rose)" : "var(--text-muted)"
                                   }}>
                                     {isPositive ? `Gets +${formatPaiseToRupees(b.netPaise)}` : isNegative ? `Owes −${formatPaiseToRupees(Math.abs(b.netPaise))}` : "Settled"}
@@ -886,36 +719,24 @@ export const TravelView: React.FC<TravelViewProps> = ({
                         </div>
 
                         {/* Suggested Settlement Transfers */}
-                        <div style={{
-                          background: "var(--bg-card)",
-                          border: "1px solid var(--border-subtle)",
-                          borderRadius: "12px",
-                          padding: "16px 20px"
-                        }}>
-                          <h4 style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text-main)", marginBottom: "12px" }}>
+                        <div className="travel-inner-card">
+                          <h4 className="travel-inner-card-title" style={{ marginBottom: "12px" }}>
                             Suggested Settlement Transfers
                           </h4>
                           {summary.settlementDebts.length === 0 ? (
-                            <div style={{ padding: "24px", textAlign: "center", color: "var(--income-emerald)", fontSize: "13px" }}>
+                            <div className="travel-settled-note">
                               ✅ All trip companions are completely settled!
                             </div>
                           ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                            <div className="travel-stack-tight">
                               {summary.settlementDebts.map((d, idx) => (
-                                <div key={idx} style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  padding: "10px 12px",
-                                  background: "var(--bg-surface)",
-                                  borderRadius: "8px"
-                                }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
-                                    <strong style={{ color: "var(--text-main)" }}>{d.from}</strong>
+                                <div key={idx} className="travel-settle-row">
+                                  <div className="travel-settle-parties">
+                                    <strong className="travel-settle-party">{d.from}</strong>
                                     <ArrowRight size={13} color="var(--text-muted)" />
-                                    <strong style={{ color: "var(--text-main)" }}>{d.to}</strong>
+                                    <strong className="travel-settle-party">{d.to}</strong>
                                   </div>
-                                  <div className="font-mono" style={{ fontSize: "14px", fontWeight: 700, color: "#06b6d4" }}>
+                                  <div className="font-mono travel-settle-amount">
                                     {formatPaiseToRupees(d.amountPaise)}
                                   </div>
                                 </div>
@@ -930,41 +751,19 @@ export const TravelView: React.FC<TravelViewProps> = ({
                     {subTab === "ledger" && (
                       <div>
                         {/* Ledger Search & Filter */}
-                        <div style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: "12px",
-                          flexWrap: "wrap",
-                          gap: "10px"
-                        }}>
-                          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <div className="travel-ledger-toolbar">
+                          <div className="travel-ledger-filters">
                             <input 
                               type="text"
                               placeholder="Search this trip's expenses..."
                               value={ledgerSearchQuery}
                               onChange={(e) => setLedgerSearchQuery(e.target.value)}
-                              style={{
-                                padding: "6px 12px",
-                                background: "var(--bg-card)",
-                                border: "1px solid var(--border-medium)",
-                                borderRadius: "7px",
-                                color: "var(--text-main)",
-                                fontSize: "12.5px",
-                                width: "200px"
-                              }}
+                              className="travel-ledger-search"
                             />
                             <select
                               value={ledgerCategoryFilter}
                               onChange={(e) => setLedgerCategoryFilter(e.target.value)}
-                              style={{
-                                padding: "6px 10px",
-                                background: "var(--bg-card)",
-                                border: "1px solid var(--border-medium)",
-                                borderRadius: "7px",
-                                color: "var(--text-main)",
-                                fontSize: "12.5px"
-                              }}
+                              className="travel-ledger-select"
                             >
                               <option value="all">All Categories</option>
                               {(Object.keys(TRAVEL_CATEGORIES) as TravelCategory[]).map((cat) => (
@@ -986,11 +785,11 @@ export const TravelView: React.FC<TravelViewProps> = ({
 
                         {/* Table */}
                         {ledgerExpenses.length === 0 ? (
-                          <div style={{ padding: "30px", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
+                          <div className="travel-ledger-empty">
                             No expenses found matching the criteria.
                           </div>
                         ) : (
-                          <div style={{ overflowX: "auto" }}>
+                          <div className="travel-ledger-scroll">
                             <table className="data-table">
                               <thead>
                                 <tr>
@@ -1012,22 +811,15 @@ export const TravelView: React.FC<TravelViewProps> = ({
                                     <tr key={exp.id} className={highlightedExpenseId === exp.id ? "source-highlight" : undefined}>
                                       <td className="font-mono" style={{ fontSize: "12px" }}>{exp.date}</td>
                                       <td>
-                                        <div style={{ fontWeight: 600, color: "var(--text-main)" }}>{exp.title}</div>
+                                        <div className="travel-ledger-title">{exp.title}</div>
                                         {exp.notes && (
-                                          <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{exp.notes}</div>
+                                          <div className="travel-ledger-notes">{exp.notes}</div>
                                         )}
                                       </td>
                                       <td>
-                                        <span style={{
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: "4px",
-                                          fontSize: "11px",
-                                          padding: "2px 8px",
-                                          borderRadius: "4px",
+                                        <span className="travel-cat-chip" style={{
                                           background: catMeta.bgColor,
-                                          color: catMeta.color,
-                                          fontWeight: 600
+                                          color: catMeta.color
                                         }}>
                                           {renderCategoryIcon(exp.category)}
                                           {catMeta.label}
@@ -1049,14 +841,17 @@ export const TravelView: React.FC<TravelViewProps> = ({
                                       <td style={{ textAlign: "right" }}>
                                         <button
                                           type="button"
+                                          className="travel-ledger-icon-btn"
+                                          onClick={(e) => handleOpenEditExpense(trip, exp, e)}
+                                          style={{ marginRight: "2px" }}
+                                          title="Edit expense"
+                                        >
+                                          <Pencil size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="travel-ledger-icon-btn"
                                           onClick={() => onDeleteExpense(exp.id)}
-                                          style={{
-                                            background: "transparent",
-                                            border: "none",
-                                            color: "var(--text-muted)",
-                                            cursor: "pointer",
-                                            padding: "4px"
-                                          }}
                                           title="Delete expense"
                                         >
                                           <Trash2 size={14} />
@@ -1091,13 +886,15 @@ export const TravelView: React.FC<TravelViewProps> = ({
         onUpdateTrip={onUpdateTrip}
       />
 
-      {/* Add Travel Expense Modal */}
+      {/* Add / Edit Travel Expense Modal */}
       {activeModalTrip && (
         <AddTravelExpenseModal 
           isOpen={!!activeModalTrip}
-          onClose={() => setActiveModalTrip(null)}
+          onClose={() => { setActiveModalTrip(null); setEditingExpense(null); }}
           activeTrip={activeModalTrip}
           onAddExpense={onAddExpense}
+          initialExpense={editingExpense}
+          onUpdateExpense={onUpdateExpense}
         />
       )}
     </div>

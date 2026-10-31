@@ -14,7 +14,7 @@ import {
   Ticket 
 } from "lucide-react";
 import { Trip, TripExpense, TravelCategory, SplitType } from "../types";
-import { parseRupeesToPaise, formatPaiseToRupees } from "../utils/money";
+import { parseRupeesToPaise, formatPaiseToRupees, formatPaiseToDecimal } from "../utils/money";
 import { TRAVEL_CATEGORIES, computeExpenseShares } from "../utils/travel";
 import { getLocalDate, isValidStrictCalendarDate } from "../utils/dates";
 
@@ -23,14 +23,19 @@ interface AddTravelExpenseModalProps {
   onClose: () => void;
   activeTrip: Trip | null;
   onAddExpense: (expense: Omit<TripExpense, "id">) => Promise<void>;
+  initialExpense?: TripExpense | null;
+  onUpdateExpense?: (expense: TripExpense) => Promise<void>;
 }
 
 export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   isOpen,
   onClose,
   activeTrip,
-  onAddExpense
+  onAddExpense,
+  initialExpense,
+  onUpdateExpense
 }) => {
+  const isEditMode = Boolean(initialExpense);
   const members = activeTrip?.members && activeTrip.members.length > 0
     ? activeTrip.members
     : ["Me"];
@@ -51,17 +56,32 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setTitle("");
-      setCategory("activities");
-      setDate(defaultDate);
-      setAmountStr("");
-      setPaidBy("Me");
-      setSplitType("equal");
-      setSelectedSplitMembers(members);
-      setNotes("");
+      if (initialExpense) {
+        setTitle(initialExpense.title);
+        setCategory(initialExpense.category);
+        setDate(initialExpense.date);
+        setAmountStr(initialExpense.amountPaise > 0 ? formatPaiseToDecimal(initialExpense.amountPaise) : "");
+        setPaidBy(initialExpense.paidBy);
+        setSplitType(initialExpense.splitType);
+        setSelectedSplitMembers(
+          initialExpense.splitMembers && initialExpense.splitMembers.length > 0
+            ? initialExpense.splitMembers
+            : members
+        );
+        setNotes(initialExpense.notes || "");
+      } else {
+        setTitle("");
+        setCategory("activities");
+        setDate(defaultDate);
+        setAmountStr("");
+        setPaidBy("Me");
+        setSplitType("equal");
+        setSelectedSplitMembers(members);
+        setNotes("");
+      }
       setError(null);
     }
-  }, [isOpen, defaultDate, members]);
+  }, [isOpen, defaultDate, members, initialExpense]);
 
   // Compute live preview of shares
   const livePreview = useMemo(() => {
@@ -160,18 +180,34 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
 
     setIsSaving(true);
     try {
-      await onAddExpense({
-        tripId: activeTrip.id,
-        date,
-        title: title.trim(),
-        category,
-        amountPaise,
-        paidBy,
-        splitType,
-        splitMembers: finalSplitMembers,
-        mySharePaise,
-        notes: notes.trim() || undefined
-      });
+      if (initialExpense && onUpdateExpense) {
+        await onUpdateExpense({
+          ...initialExpense,
+          tripId: activeTrip.id,
+          date,
+          title: title.trim(),
+          category,
+          amountPaise,
+          paidBy,
+          splitType,
+          splitMembers: finalSplitMembers,
+          mySharePaise,
+          notes: notes.trim() || undefined
+        });
+      } else {
+        await onAddExpense({
+          tripId: activeTrip.id,
+          date,
+          title: title.trim(),
+          category,
+          amountPaise,
+          paidBy,
+          splitType,
+          splitMembers: finalSplitMembers,
+          mySharePaise,
+          notes: notes.trim() || undefined
+        });
+      }
       onClose();
     } catch (err) { setError(`Could not record travel expense: ${String(err)}`); }
     finally { setIsSaving(false); }
@@ -214,9 +250,9 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
               {renderCategoryIcon(category)}
             </div>
             <div>
-              <h2 className="modal-title">Record Travel Expense</h2>
+              <h2 className="modal-title">{isEditMode ? "Edit Travel Expense" : "Record Travel Expense"}</h2>
               <p className="modal-subtitle">
-                Adding to <span style={{ color: "var(--text-main)", fontWeight: 600 }}>{activeTrip.name}</span>
+                {isEditMode ? "Editing in " : "Adding to "}<span style={{ color: "var(--text-main)", fontWeight: 600 }}>{activeTrip.name}</span>
               </p>
             </div>
           </div>
@@ -524,7 +560,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Record Expense"}
+              {isSaving ? "Saving..." : isEditMode ? "Save Changes" : "Record Expense"}
             </button>
           </div>
         </form>

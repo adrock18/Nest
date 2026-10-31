@@ -343,6 +343,17 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleUpdateTripExpense = async (updatedExp: TripExpense) => {
+    try {
+      // Reuse the upsert: preserving the id keeps any linked Transaction.tripExpenseId valid.
+      await api.createTripExpense(updatedExp);
+      setTripExpenses((prev) => prev.map((e) => (e.id === updatedExp.id ? updatedExp : e)));
+    } catch (err) {
+      console.error("Failed to update trip expense:", err);
+      throw err;
+    }
+  };
+
   const handleDeleteTripExpense = async (id: string) => {
     try {
       if (!await api.deleteTripExpense(id)) throw new Error("Travel expense no longer exists.");
@@ -465,6 +476,7 @@ export const App: React.FC = () => {
             month={selectedMonth}
             onDeleteTrip={handleDeleteTrip}
             onAddExpense={handleAddTripExpense}
+            onUpdateExpense={handleUpdateTripExpense}
             onDeleteExpense={handleDeleteTripExpense}
             focusTrip={tripFocus}
             onNavigateToWorkspace={(workspaceId, month) => {
