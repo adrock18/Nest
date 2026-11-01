@@ -432,6 +432,7 @@ console.log("\n[7/7] Testing Travel & Trip Expenses, Daily Spending & Split Engi
 import { 
   calculateTripDays, 
   computeExpenseShares, 
+  computeExpenseSharesWithGst,
   computeSettlementDebts, 
   computeTravelSummary 
 } from "../src/utils/travel.ts";
@@ -583,6 +584,72 @@ const updatedSummary = computeTravelSummary(editedTrip, mockTripExpenses, "Me");
 assert(calculateTripDays(editedTrip.startDate, editedTrip.endDate) === 10, "Edited trip duration updated to 10 days");
 assert(updatedSummary.dailyAveragePaise === Math.round(3100000 / 10), "Daily average spend recomputes cleanly on duration edit");
 assert(updatedSummary.budgetUsedPct === 50, "Budget used percentage updates to 50% with new budget");
+
+// ----------------------------------------------------------------------
+// 7.5. INPUT.TXT SCENARIO VERIFICATION — real split cases, exact whole paise.
+// These encode representative cases from the trip scenario and assert the
+// exact integer-paise results. No trip is persisted; they document the engine.
+// ----------------------------------------------------------------------
+const SIX = ["Me", "A", "B", "C", "D", "E"];
+
+// Equal split of a round amount across 6 people (surfing ₹1800 = 180000 paise).
+const surf = computeExpenseShares(180000, "A", SIX, "Me");
+assert(SIX.every((m) => surf.perMemberShares[m] === 30000), "Surfing ₹1800 across 6 → each exactly ₹300 (30000 paise)");
+assert(Object.values(surf.perMemberShares).reduce((a, b) => a + b, 0) === 180000, "Surfing 6-way shares sum exactly to 180000 paise (zero lost)");
+assert(surf.mySharePaise === 30000, "My surfing share is ₹300 even though A paid");
+
+// Custom subset: scooty ₹400 split between 2 members.
+const scooty = computeExpenseShares(40000, "Me", ["Me", "A"], "Me");
+assert(scooty.perMemberShares["Me"] === 20000 && scooty.perMemberShares["A"] === 20000, "Scooty ₹400 between 2 → ₹200 each (20000 paise)");
+assert(scooty.perMemberShares["B"] === undefined, "Scooty custom subset does not charge uninvolved members");
+
+// Auto ₹400 split among 4 members.
+const auto = computeExpenseShares(40000, "A", ["Me", "A", "B", "C"], "Me");
+assert(["Me", "A", "B", "C"].every((m) => auto.perMemberShares[m] === 10000), "Auto ₹400 among 4 → ₹100 each (10000 paise)");
+assert(Object.values(auto.perMemberShares).reduce((a, b) => a + b, 0) === 40000, "Auto 4-way shares sum exactly to 40000 paise");
+
+// "I didn't eat" personal-exclusion: a ₹600 bill I paid but is split among
+// the OTHER 5 only. My share is 0; I am owed the whole amount back.
+const dinner = computeExpenseShares(60000, "Me", ["A", "B", "C", "D", "E"], "Me");
+assert(dinner.mySharePaise === 0, "Personal exclusion → my share is exactly 0 when I'm not in the split");
+assert(Object.values(dinner.perMemberShares).reduce((a, b) => a + b, 0) === 60000, "Excluded-me bill still sums to the full 60000 paise across the others");
+const dinnerBalances = [
+  { member: "Me", paidPaise: 60000, sharePaise: 0, netPaise: 60000 },
+  { member: "A", paidPaise: 0, sharePaise: 12000, netPaise: -12000 },
+  { member: "B", paidPaise: 0, sharePaise: 12000, netPaise: -12000 },
+  { member: "C", paidPaise: 0, sharePaise: 12000, netPaise: -12000 },
+  { member: "D", paidPaise: 0, sharePaise: 12000, netPaise: -12000 },
+  { member: "E", paidPaise: 0, sharePaise: 12000, netPaise: -12000 }
+];
+const dinnerDebts = computeSettlementDebts(dinnerBalances);
+assert(dinnerDebts.length === 5 && dinnerDebts.every((d) => d.to === "Me" && d.amountPaise === 12000), "Each of the 5 diners repays ₹120 to Me (owed back in full)");
+
+// Paid-by-another-member net balances + minimal settlement. B paid the ₹1800
+// surf for all 6; everyone else (incl. Me) owes their ₹300 share back to B.
+const bPaidBalances = SIX.map((m) => m === "B"
+  ? { member: "B", paidPaise: 180000, sharePaise: 30000, netPaise: 150000 }
+  : { member: m, paidPaise: 0, sharePaise: 30000, netPaise: -30000 });
+const bDebts = computeSettlementDebts(bPaidBalances);
+assert(bDebts.length === 5 && bDebts.every((d) => d.to === "B" && d.amountPaise === 30000), "Paid-by-B surf → 5 transfers of ₹300 each straight to B");
+
+// Stay cost × days: ₹1200 per unit, split 6 ways, across 2 days.
+const stayDay = computeExpenseShares(120000, "A", SIX, "Me"); // 1200 * 1 day
+assert(SIX.every((m) => stayDay.perMemberShares[m] === 20000), "Stay ₹1200/day across 6 → ₹200 each per day (20000 paise)");
+const stayTwoDays = computeExpenseShares(240000, "A", SIX, "Me"); // 1200 * 2 days
+assert(Object.values(stayTwoDays.perMemberShares).reduce((a, b) => a + b, 0) === 240000, "Stay 1200*2 days across 6 reconciles to 240000 paise total");
+assert(stayTwoDays.perMemberShares["Me"] === 40000, "Two-day stay share for Me is ₹400 (2 × ₹200)");
+
+// GST split: a ₹1000 expense with ₹180 GST, split among 4 (Me paid).
+// "includes GST" splits the whole ₹1000; "excludes GST" splits only the ₹820
+// base and attributes the ₹180 GST to the payer (Me). Both reconcile to 100000.
+const gstMembers = ["Me", "A", "B", "C"];
+const inclGst = computeExpenseSharesWithGst(100000, 18000, true, "Me", gstMembers, "Me");
+const exclGst = computeExpenseSharesWithGst(100000, 18000, false, "Me", gstMembers, "Me");
+assert(inclGst.mySharePaise === 25000, "GST-inclusive split → my share is ₹250 (whole ₹1000 / 4)");
+assert(exclGst.mySharePaise === 20500 + 18000, "GST-exclusive split → my share is base ₹205 + ₹180 GST = ₹385 (38500 paise)");
+assert(inclGst.mySharePaise !== exclGst.mySharePaise, "Include vs exclude GST produce different whole-paise my-shares");
+assert(Object.values(inclGst.perMemberShares).reduce((a, b) => a + b, 0) === 100000, "GST-inclusive per-member shares reconcile exactly to 100000 paise");
+assert(Object.values(exclGst.perMemberShares).reduce((a, b) => a + b, 0) === 100000, "GST-exclusive per-member shares reconcile exactly to 100000 paise");
 
 // ======================================================================
 // SUMMARY REPORT

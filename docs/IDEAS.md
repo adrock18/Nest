@@ -223,6 +223,9 @@ type-specific fields — not a generic configurable tracking platform.
   history, preserving the original item and coverage records.
 - **Shopping insights**: store statistics, product price history, price tracking and deal scoring from
   comparable recorded purchases (the original Scout concept).
+- **Per-expense location / spend map**: optional GPS or place capture on an individual purchase or
+  travel expense so spending can later be shown on a map. Needs its own privacy, permission and
+  platform decision; location is never required to record money.
 - **Automation and capture**: barcode scanning, human-reviewed receipt/OCR drafts (drafts only, never
   auto-recorded money), closed-app reminders, mobile capture and sync — each needs its own scope and
   platform decision.
