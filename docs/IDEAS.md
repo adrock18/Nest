@@ -162,3 +162,97 @@ Expense Tracker ──> Financial Data Platform ──> Financial Intelligence �
 │ - Mobile Companion Client (Local LAN P2P Encrypted Sync)                                        │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Scout — Items & Purchases (Unscheduled)
+
+> **Status**: Future backlog idea only. Not part of any current release and carries **no version
+> number** until a deliberate scope decision schedules it. Nest and Realm release numbering must be
+> reconciled before an actual version is proposed. This is personal-possession tracking inside the one
+> Nest app as internal modules — not a separate inventory application, and not business inventory.
+
+A dedicated **Items & Purchases** workspace for personal possessions, purchase evidence, warranties
+and consumable expiry. Transaction entry stays quick; this is a separate workspace, not a change to
+the finance ledger. It builds on shared purchase/possession infrastructure with small optional
+type-specific fields — not a generic configurable tracking platform.
+
+### Must-have foundations (when selected)
+
+- **Purchases and store locations**: purchase date, merchant, specific branch/address, invoice
+  reference, and lines with quantities, prices and discounts. Preserve the original purchased
+  description and store snapshot when catalog or merchant details later change.
+- **Personal possessions**: register items from purchases, gifts, or unknown history. Optional
+  product/model, serial number, location, condition and acquired date; support archived, returned,
+  sold, donated and disposed lifecycle states without erasing financial history.
+- **Payment links (no double-count)**: optionally associate a purchase/item with an existing ledger
+  transaction without creating another expense. Distinguish payment account from optional method
+  (UPI/card/cash) and reference; never store card credentials. One bill may hold several items. Count
+  ledger money only once. Purchase cost is historical, not current asset valuation.
+- **Photos and evidence**: multiple item photos, invoices and warranty documents via a managed
+  attachment foundation. One original may serve several records without copying it per record.
+- **Warranties and return deadlines**: provider, explicit confirmed start/end dates, terms and
+  evidence; distinguish manufacturer/extended coverage from return windows. Unknown and
+  not-applicable are explicit states, kept distinct from real dates. Display recorded coverage only,
+  never a guarantee of claim eligibility.
+- **In-app attention list**: upcoming, due and overdue recorded deadlines, recalculated on launch and
+  after edits. Snoozing or dismissing a reminder does not alter its source date. No closed-app
+  notifications without a separately approved background-execution design.
+- **Finding records**: search/filter by item, merchant/branch, purchase date, type, location and
+  lifecycle; navigate from payments to purchases/items and back to source evidence.
+
+### Concrete examples the design must cover
+
+- **Clothes**: one invoice for a shirt and two trousers; purchase date and store branch, per-item
+  quantities/prices/discounts, optional size/color/material, individual photos, and a linked payment.
+  Returns, donation or sale are tracked without changing the original purchase history.
+- **SSD**: brand/model/capacity and individual serial number; seller/branch, purchase date, invoice,
+  payment account versus method, and warranty evidence. A relationship can later identify the computer
+  it is installed in; replacement history preserves the old SSD rather than overwriting it.
+
+### Deferred increments
+
+- **Consumable lots and expiry**: exact quantities/units, batch reference, optional opened date, and
+  explicitly labelled expiry/use-by/best-before meaning. The same product can have different dates per
+  lot; never attach one expiry to the catalog definition or infer food/medicine safety from a date.
+- **Typed item relationships**: accessory-of, part-of, installed-in, replacement-for; reject invalid
+  self-links, duplicates and containment cycles. Kits and replacements keep explicit history.
+- **Purchase/payment complexity**: partial payments, multiple-payment allocations, partial returns and
+  linked refunds beyond the initial simple linking scope.
+- **Warranty claims and repairs**: claim status, communications, service evidence and replacement
+  history, preserving the original item and coverage records.
+- **Shopping insights**: store statistics, product price history, price tracking and deal scoring from
+  comparable recorded purchases (the original Scout concept).
+- **Automation and capture**: barcode scanning, human-reviewed receipt/OCR drafts (drafts only, never
+  auto-recorded money), closed-app reminders, mobile capture and sync — each needs its own scope and
+  platform decision.
+- **Out of scope for Scout**: business inventory, multiple operators, and warehouse/sales workflows
+  are never implied by this module.
+
+### Data, recovery and delivery boundaries
+
+- Distinguish reusable **products**, **purchase lines**, individual **owned items** and **consumable
+  lots**. Warranties usually belong to an owned item; expiry belongs to a lot. Stable IDs, foreign
+  keys, indexes, native validation, SQLite constraints, and exact integer-paise / scaled-quantity
+  arithmetic under the approved money contract.
+- Removing a payment must not delete a possession; archiving/disposing an item must not erase
+  financial history; removing one attachment link must not delete an original still referenced
+  elsewhere.
+- **Rust owns file imports and persistent writes.** Store managed originals in OS app-data storage
+  outside the repo and install folder, with portable relative references, validated formats/sizes and
+  checksums. Originals are durable; thumbnails are rebuildable. Handle interrupted imports, missing
+  files, permission failures and disk-full errors explicitly — filesystem and SQL changes are not one
+  atomic transaction.
+- Backups include a coherent SQLite snapshot, referenced originals, a format/schema manifest and
+  checksums. Restore validates in a separate location and preserves current data until replacement
+  succeeds; reject unsupported future schemas clearly. Prove recovery with synthetic records before
+  relying on real data.
+- Deliver as small approved increments, roughly: (1) stabilize persistence + verified recovery,
+  (2) managed attachments, (3) basic purchases/possessions + payment links, (4) warranties + attention
+  list, (5) consumable lots + expiry meanings, (6) typed relationships + restricted read-only
+  dashboard summaries. Implement only the approved increment, end-to-end, with tests.
+- Tests must cover: multiple items on one invoice and gifts without payments; no double-counting
+  across finance and item views; same product in different lots; calendar boundaries and unknown
+  dates; deletion/archive/link behavior; shared attachments and interrupted imports; missing files and
+  failed saves; upgrade, unsupported schema and full restore; restart/offline and installed Windows
+  behavior; reminder recomputation without duplicate delivery.
