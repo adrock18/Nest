@@ -203,13 +203,15 @@
     border-color: var(--rail-accent, var(--border-medium));
     box-shadow: none;
   }
+  /* Selected chip: themed surface + bold accent ring, so the label stays
+     readable regardless of the trip's user-chosen cover color. */
   .travel-rail-row.is-selected {
-    background: var(--rail-accent, var(--bg-card));
+    background: var(--bg-card);
     border-color: var(--rail-accent, var(--border-strong, var(--border-medium)));
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 1.5px var(--rail-accent, var(--border-medium)), 0 1px 6px rgba(0, 0, 0, 0.25);
   }
-  .travel-rail-row.is-selected .travel-rail-name,
-  .travel-rail-row.is-selected .travel-rail-total { color: #fff; }
+  .travel-rail-row.is-selected .travel-rail-name { color: var(--text-main); }
+  .travel-rail-row.is-selected .travel-rail-total { color: var(--income-emerald); }
   .travel-rail-row-main { gap: 8px; }
   .travel-rail-name { font-size: 12.5px; max-width: 150px; }
   .travel-rail-total { font-size: 11.5px; }
