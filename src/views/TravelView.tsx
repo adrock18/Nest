@@ -20,7 +20,7 @@ import {
   Pencil
 } from "lucide-react";
 import { Trip, TripExpense, TravelCategory } from "../types";
-import { formatPaiseToRupees } from "../utils/money";
+import { addPaise, formatPaiseToRupees } from "../utils/money";
 import { 
   TRAVEL_CATEGORIES, 
   computeTravelSummary, 
@@ -64,6 +64,11 @@ export const TravelView: React.FC<TravelViewProps> = ({
 }) => {
   // Master-detail: the single trip whose detail is shown in the panel.
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  // The last trip the user explicitly chose (click/keyboard). Used to restore
+  // the user's intent when a search filters out the selection and is cleared.
+  const [lastExplicitlySelectedId, setLastExplicitlySelectedId] = useState<string | null>(null);
+  // Refs to rail rows so keyboard navigation can move DOM focus with selection.
+  const railRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
 
   // Active subtab per trip (defaults to "overview")
   const [tripSubTabs, setTripSubTabs] = useState<Record<string, SubTab>>({});
@@ -86,6 +91,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
     setLedgerCategoryFilter("all");
     setHighlightedExpenseId(expenseId);
     setSelectedTripId(tripId);
+    setLastExplicitlySelectedId(tripId);
     setTripSubTabs((prev) => ({ ...prev, [tripId]: expenseId ? "ledger" : "overview" }));
     return requestAnimationFrame(() => document.getElementById(`trip-detail-panel`)?.scrollIntoView({ block: "nearest" }));
   }, []);
@@ -185,19 +191,58 @@ export const TravelView: React.FC<TravelViewProps> = ({
     );
   }, [trips, searchQuery]);
 
-  // Resolve the trip whose detail is shown: honour the explicit selection when it
-  // still exists in the filtered list, otherwise fall back to the first trip.
+  // Resolve the trip whose detail is shown. Priority:
+  //   1. the current explicit selection, when it survives the filter;
+  //   2. the user's last explicitly-clicked trip, when it is present again
+  //      (restores intent after a search filtered it out and was cleared);
+  //   3. fall back to the first filtered trip.
   const selectedTrip = useMemo(() => {
     if (filteredTrips.length === 0) return null;
-    return filteredTrips.find((t) => t.id === selectedTripId) || filteredTrips[0];
-  }, [filteredTrips, selectedTripId]);
+    return (
+      filteredTrips.find((t) => t.id === selectedTripId) ||
+      filteredTrips.find((t) => t.id === lastExplicitlySelectedId) ||
+      filteredTrips[0]
+    );
+  }, [filteredTrips, selectedTripId, lastExplicitlySelectedId]);
 
-  // Keep component state in sync so the highlighted rail row matches the detail panel.
+  // Keep component state in sync so the highlighted rail row matches the detail
+  // panel. This only writes the fallback selection, never the "explicit" intent.
   useEffect(() => {
     if (selectedTrip && selectedTrip.id !== selectedTripId) {
       setSelectedTripId(selectedTrip.id);
     }
   }, [selectedTrip, selectedTripId]);
+
+  // A real user selection (click or keyboard). Records both the active selection
+  // and the explicit intent used to reconcile selection across filter changes.
+  const selectTripExplicitly = useCallback((tripId: string) => {
+    setSelectedTripId(tripId);
+    setLastExplicitlySelectedId(tripId);
+  }, []);
+
+  // Arrow-key navigation within the rail. Up/Down (and Left/Right in the narrow
+  // chip layout) move selection to the previous/next trip in filtered order and
+  // move DOM focus to that row. Enter/Space select the focused row.
+  const handleRailKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+      const { key } = event;
+      if (key === "Enter" || key === " ") {
+        event.preventDefault();
+        selectTripExplicitly(filteredTrips[index].id);
+        return;
+      }
+      let nextIndex: number | null = null;
+      if (key === "ArrowDown" || key === "ArrowRight") nextIndex = index + 1;
+      else if (key === "ArrowUp" || key === "ArrowLeft") nextIndex = index - 1;
+      if (nextIndex === null) return;
+      if (nextIndex < 0 || nextIndex >= filteredTrips.length) return;
+      event.preventDefault();
+      const nextTrip = filteredTrips[nextIndex];
+      selectTripExplicitly(nextTrip.id);
+      railRowRefs.current[nextTrip.id]?.focus();
+    },
+    [filteredTrips, selectTripExplicitly]
+  );
 
   return (
     <div className="view-content-wrapper travel-workspace">
@@ -284,7 +329,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
           {/* MASTER: compact trip rail (sticky on wide) + chip bar (sticky on narrow) */}
           <nav className="travel-trip-rail" aria-label="Your trips">
             <div className="travel-rail-list">
-              {filteredTrips.map((trip) => {
+              {filteredTrips.map((trip, index) => {
                 const tripExpList = (tripExpenses || []).filter((e) => e.tripId === trip.id);
                 const summary = computeTravelSummary(trip, tripExpList, "Me");
                 const themeColor = trip.coverColor || "#06b6d4";
@@ -294,10 +339,12 @@ export const TravelView: React.FC<TravelViewProps> = ({
                   <button
                     key={trip.id}
                     type="button"
+                    ref={(el) => { railRowRefs.current[trip.id] = el; }}
                     className={`travel-rail-row${isSelected ? " is-selected" : ""}`}
-                    onClick={() => setSelectedTripId(trip.id)}
+                    onClick={() => selectTripExplicitly(trip.id)}
+                    onKeyDown={(e) => handleRailKeyDown(e, index)}
                     aria-pressed={isSelected}
-                    style={{ borderLeft: `4px solid ${themeColor}` }}
+                    style={{ borderLeft: `4px solid ${themeColor}`, ["--rail-accent" as string]: themeColor }}
                   >
                     <div className="travel-rail-row-main">
                       <span className="travel-rail-name">{trip.name}</span>
@@ -891,6 +938,20 @@ export const TravelView: React.FC<TravelViewProps> = ({
                                   );
                                 })}
                               </tbody>
+                              <tfoot>
+                                <tr className="travel-ledger-total-row">
+                                  <td colSpan={5} className="travel-ledger-total-label">
+                                    Totals · {ledgerExpenses.length} {ledgerExpenses.length === 1 ? "expense" : "expenses"}
+                                  </td>
+                                  <td className="font-mono travel-ledger-total-share">
+                                    {formatPaiseToRupees(ledgerExpenses.reduce((acc, e) => addPaise(acc, e.mySharePaise), 0))}
+                                  </td>
+                                  <td className="font-mono travel-ledger-total-amount">
+                                    {formatPaiseToRupees(ledgerExpenses.reduce((acc, e) => addPaise(acc, e.amountPaise), 0))}
+                                  </td>
+                                  <td aria-hidden="true" />
+                                </tr>
+                              </tfoot>
                             </table>
                           </div>
                         )}
