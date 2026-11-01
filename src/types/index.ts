@@ -104,6 +104,7 @@ export interface TripExpense {
   splitType: SplitType;
   splitMembers: string[]; // Members who share this cost
   mySharePaise: number; // User's calculated portion in integer paise
+  gstPaise?: number; // Optional GST portion of amountPaise, whole integer paise >= 0
   notes?: string;
   items?: ExpenseItem[];
   receiptImage?: string;

@@ -102,4 +102,9 @@ pub struct TripExpense {
     pub items: Option<Vec<ExpenseItem>>,
     #[serde(default)]
     pub receipt_image: Option<String>,
+    // Optional GST portion of amount_paise (whole integer paise, >= 0).
+    // #[serde(default)] keeps older payloads without the field deserializable;
+    // serde rename_all = "camelCase" exposes this as `gstPaise` to the frontend.
+    #[serde(default)]
+    pub gst_paise: Option<i64>,
 }

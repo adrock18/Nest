@@ -25,6 +25,7 @@ export function TravelDashboard({ trips, expenses, month, onOpenTrip, onNavigate
       <div className="metric-card"><span className="metric-label">Group bills recorded</span><strong className="metric-value expense">{formatPaiseToRupees(summary.groupPaise)}</strong><small>All companions, including your share</small></div>
       <div className="metric-card"><span className="metric-label">Paid by you</span><strong className="metric-value expense">{formatPaiseToRupees(summary.paidByMePaise)}</strong><small>Recorded payer amounts, not bank cash flow</small></div>
       <div className="metric-card"><span className="metric-label">Trips with spending</span><strong className="metric-value savings">{summary.tripCount}</strong><small>{summary.entries.length} expenses this month</small></div>
+      <div className="metric-card"><span className="metric-label">GST paid</span><strong className="metric-value expense">{formatPaiseToRupees(summary.gstPaise)}</strong><small>Tax within this month's travel spend</small></div>
     </section>
     <div className="workspace-detail-grid">
       <section className="panel-card">

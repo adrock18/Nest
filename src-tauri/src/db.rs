@@ -352,6 +352,36 @@ pub fn init_database(conn: &mut Connection) -> Result<()> {
         tx.execute_batch(include_str!("../migrations/005_connected_spending.sql"))?;
         tx.commit()?;
     }
+
+    if version < 6 {
+        // Version 6: additive GST tracking per trip expense.
+        // We only ADD a nullable column; we never recreate the table, so every
+        // existing row and its data is preserved. The PRAGMA table_info guard
+        // makes this idempotent — re-running init on an already-migrated DB is
+        // a no-op. This mirrors the version-4 items_json/receipt_image migration.
+        let tx = conn.transaction()?;
+
+        let has_gst: bool = {
+            let mut stmt = tx.prepare("PRAGMA table_info(trip_expenses);")?;
+            let mut rows = stmt.query([])?;
+            let mut found = false;
+            while let Some(row) = rows.next()? {
+                let col_name: String = row.get(1)?;
+                if col_name == "gst_paise" {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+
+        if !has_gst {
+            tx.execute("ALTER TABLE trip_expenses ADD COLUMN gst_paise INTEGER;", [])?;
+        }
+
+        tx.execute("PRAGMA user_version = 6;", [])?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -718,11 +748,11 @@ pub fn remove_trip(conn: &Connection, id: &str) -> Result<bool> {
 pub fn fetch_trip_expenses(conn: &Connection, trip_id: Option<&str>) -> Result<Vec<TripExpense>> {
     let (query, has_param) = match trip_id {
         Some(_) => (
-            "SELECT id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image FROM trip_expenses WHERE trip_id = ?1 ORDER BY date DESC, id DESC",
+            "SELECT id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image, gst_paise FROM trip_expenses WHERE trip_id = ?1 ORDER BY date DESC, id DESC",
             true
         ),
         None => (
-            "SELECT id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image FROM trip_expenses ORDER BY date DESC, id DESC",
+            "SELECT id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image, gst_paise FROM trip_expenses ORDER BY date DESC, id DESC",
             false
         ),
     };
@@ -748,6 +778,8 @@ fn parse_trip_expense_row(row: &rusqlite::Row) -> Result<TripExpense> {
     let items_raw: Option<String> = row.get(11)?;
     let items: Option<Vec<crate::models::ExpenseItem>> = items_raw.and_then(|json| serde_json::from_str(&json).ok());
     let receipt_image: Option<String> = row.get(12)?;
+    // NULL-safe: pre-migration rows (and rows saved without GST) read as None.
+    let gst_paise: Option<i64> = row.get(13)?;
 
     Ok(TripExpense {
         id: row.get(0)?,
@@ -763,6 +795,7 @@ fn parse_trip_expense_row(row: &rusqlite::Row) -> Result<TripExpense> {
         notes: row.get(10)?,
         items,
         receipt_image,
+        gst_paise,
     })
 }
 
@@ -771,8 +804,8 @@ pub fn insert_trip_expense(conn: &Connection, exp: &TripExpense) -> Result<()> {
     let items_json = exp.items.as_ref().map(|items| serde_json::to_string(items).unwrap_or_else(|_| "[]".to_string()));
 
     conn.execute(
-        "INSERT INTO trip_expenses (id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+        "INSERT INTO trip_expenses (id, trip_id, date, title, category, amount_paise, paid_by, split_type, split_members_json, my_share_paise, notes, items_json, receipt_image, gst_paise)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(id) DO UPDATE SET
             date = excluded.date,
             title = excluded.title,
@@ -784,7 +817,8 @@ pub fn insert_trip_expense(conn: &Connection, exp: &TripExpense) -> Result<()> {
             my_share_paise = excluded.my_share_paise,
             notes = excluded.notes,
             items_json = excluded.items_json,
-            receipt_image = excluded.receipt_image",
+            receipt_image = excluded.receipt_image,
+            gst_paise = excluded.gst_paise",
         params![
             exp.id,
             exp.trip_id,
@@ -798,7 +832,8 @@ pub fn insert_trip_expense(conn: &Connection, exp: &TripExpense) -> Result<()> {
             exp.my_share_paise,
             exp.notes,
             items_json,
-            exp.receipt_image
+            exp.receipt_image,
+            exp.gst_paise
         ],
     )?;
     Ok(())
@@ -826,7 +861,7 @@ mod tests {
         let mut conn = setup_test_db();
         
         let version: i32 = conn.query_row("PRAGMA user_version;", [], |row| row.get(0)).unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         // Verify seeded accounts (V1: Unified Primary Amount)
         let accounts = fetch_accounts(&conn).unwrap();
@@ -1320,6 +1355,7 @@ mod tests {
             notes: Some("Solang Valley instructor fees & itemized gear".to_string()),
             items: Some(sample_items),
             receipt_image: None,
+            gst_paise: Some(45000), // ₹450 GST recorded within this expense
         };
         insert_trip_expense(&conn, &new_exp).unwrap();
 
@@ -1331,6 +1367,32 @@ mod tests {
         assert!(manali_expenses[0].items.is_some());
         assert_eq!(manali_expenses[0].items.as_ref().unwrap().len(), 2);
         assert_eq!(manali_expenses[0].items.as_ref().unwrap()[0].name, "Full-day Ski Gear Rental (Me)");
+        // Version-6 column round-trips a recorded GST value.
+        assert_eq!(manali_expenses[0].gst_paise, Some(45000));
+
+        // Insert a second expense with no GST to prove the column is NULL-safe
+        // (None round-trips, confirming the additive migration preserves blanks).
+        let no_gst_exp = TripExpense {
+            id: "texp-manali-2".to_string(),
+            trip_id: "trip-manali-2027".to_string(),
+            date: "2027-01-12".to_string(),
+            title: "Cable Car Tickets".to_string(),
+            category: "transport".to_string(),
+            amount_paise: 120000,
+            paid_by: "Me".to_string(),
+            split_type: "equal".to_string(),
+            split_members: vec!["Me".to_string(), "Kabir".to_string()],
+            my_share_paise: 60000,
+            notes: None,
+            items: None,
+            receipt_image: None,
+            gst_paise: None,
+        };
+        insert_trip_expense(&conn, &no_gst_exp).unwrap();
+        let with_blank = fetch_trip_expenses(&conn, Some("trip-manali-2027")).unwrap();
+        let fetched_no_gst = with_blank.iter().find(|e| e.id == "texp-manali-2").unwrap();
+        assert_eq!(fetched_no_gst.gst_paise, None);
+        remove_trip_expense(&conn, "texp-manali-2").unwrap();
 
         // 5. Delete Trip Expense
         let deleted = remove_trip_expense(&conn, "texp-manali-1").unwrap();

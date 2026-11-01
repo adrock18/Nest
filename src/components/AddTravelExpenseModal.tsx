@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Trip, TripExpense, TravelCategory, SplitType } from "../types";
 import { parseRupeesToPaise, formatPaiseToRupees, formatPaiseToDecimal } from "../utils/money";
-import { TRAVEL_CATEGORIES, computeExpenseShares } from "../utils/travel";
+import { TRAVEL_CATEGORIES, computeExpenseSharesWithGst } from "../utils/travel";
 import { getLocalDate, isValidStrictCalendarDate } from "../utils/dates";
 
 interface AddTravelExpenseModalProps {
@@ -49,6 +49,10 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   const [paidBy, setPaidBy] = useState("Me");
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [selectedSplitMembers, setSelectedSplitMembers] = useState<string[]>(members);
+  // Optional GST amount (as a ₹ string) and whether the split should include it.
+  // Default "includes GST" preserves the current behaviour (whole amount split).
+  const [gstStr, setGstStr] = useState("");
+  const [splitIncludesGst, setSplitIncludesGst] = useState(true);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -68,6 +72,10 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
             ? initialExpense.splitMembers
             : members
         );
+        setGstStr(initialExpense.gstPaise && initialExpense.gstPaise > 0 ? formatPaiseToDecimal(initialExpense.gstPaise) : "");
+        // Historical expenses carry no include/exclude flag; default to "includes
+        // GST" so their saved mySharePaise stays consistent with how it was split.
+        setSplitIncludesGst(true);
         setNotes(initialExpense.notes || "");
       } else {
         setTitle("");
@@ -77,6 +85,8 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
         setPaidBy("Me");
         setSplitType("equal");
         setSelectedSplitMembers(members);
+        setGstStr("");
+        setSplitIncludesGst(true);
         setNotes("");
       }
       setError(null);
@@ -87,6 +97,11 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   const livePreview = useMemo(() => {
     try {
       const paise = parseRupeesToPaise(amountStr);
+      // GST is optional: a blank field means no GST (0 paise).
+      let gst = 0;
+      if (gstStr.trim()) gst = parseRupeesToPaise(gstStr);
+      const gstExceedsTotal = gst > paise;
+
       let targetMembers: string[] = [];
       if (splitType === "equal") {
         targetMembers = members;
@@ -96,8 +111,10 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
         targetMembers = selectedSplitMembers.length > 0 ? selectedSplitMembers : [paidBy];
       }
 
-      const { mySharePaise, perMemberShares } = computeExpenseShares(
+      const { mySharePaise, perMemberShares } = computeExpenseSharesWithGst(
         paise,
+        gst,
+        splitIncludesGst,
         paidBy,
         targetMembers,
         "Me"
@@ -105,21 +122,25 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
 
       return {
         amountPaise: paise,
+        gstPaise: gst,
+        gstExceedsTotal,
         mySharePaise,
         targetMembers,
         perMemberShares,
-        valid: true
+        valid: !gstExceedsTotal
       };
     } catch {
       return {
         amountPaise: 0,
+        gstPaise: 0,
+        gstExceedsTotal: false,
         mySharePaise: 0,
         targetMembers: members,
         perMemberShares: {},
         valid: false
       };
     }
-  }, [amountStr, splitType, members, selectedSplitMembers, paidBy]);
+  }, [amountStr, gstStr, splitIncludesGst, splitType, members, selectedSplitMembers, paidBy]);
 
   if (!isOpen || !activeTrip) return null;
 
@@ -162,6 +183,22 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
       return;
     }
 
+    // Optional GST. Blank = none. GST can never exceed the total amount.
+    let gstPaise = 0;
+    if (gstStr.trim()) {
+      try {
+        gstPaise = parseRupeesToPaise(gstStr);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Invalid GST amount.";
+        setError(msg);
+        return;
+      }
+      if (gstPaise > amountPaise) {
+        setError("GST amount cannot be more than the total amount.");
+        return;
+      }
+    }
+
     let finalSplitMembers: string[] = [];
     if (splitType === "equal") {
       finalSplitMembers = members;
@@ -171,8 +208,10 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
       finalSplitMembers = selectedSplitMembers.length > 0 ? selectedSplitMembers : [paidBy];
     }
 
-    const { mySharePaise } = computeExpenseShares(
+    const { mySharePaise } = computeExpenseSharesWithGst(
       amountPaise,
+      gstPaise,
+      splitIncludesGst,
       paidBy,
       finalSplitMembers,
       "Me"
@@ -192,6 +231,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
           splitType,
           splitMembers: finalSplitMembers,
           mySharePaise,
+          gstPaise: gstPaise > 0 ? gstPaise : undefined,
           notes: notes.trim() || undefined
         });
       } else {
@@ -205,6 +245,7 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
           splitType,
           splitMembers: finalSplitMembers,
           mySharePaise,
+          gstPaise: gstPaise > 0 ? gstPaise : undefined,
           notes: notes.trim() || undefined
         });
       }
@@ -413,6 +454,57 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
             </div>
           </div>
 
+          {/* GST amount + whether the split includes or excludes it */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="expense-gst">
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                <span>GST amount (₹)</span>
+                <span style={{ fontSize: "10.5px", fontWeight: 400, color: "var(--text-muted)", textTransform: "none" }}>
+                  Optional · leave blank if none
+                </span>
+              </span>
+            </label>
+            <input
+              id="expense-gst"
+              type="text"
+              className="form-input"
+              placeholder="e.g. 450.00"
+              value={gstStr}
+              onChange={(e) => setGstStr(e.target.value)}
+              aria-describedby="expense-gst-hint"
+            />
+            {gstStr.trim() !== "" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
+                {[
+                  { incl: true, label: "Split includes GST", desc: "Whole amount is shared" },
+                  { incl: false, label: "Split excludes GST", desc: "GST goes to the payer" }
+                ].map((opt) => (
+                  <button
+                    key={String(opt.incl)}
+                    type="button"
+                    onClick={() => setSplitIncludesGst(opt.incl)}
+                    aria-pressed={splitIncludesGst === opt.incl}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      border: splitIncludesGst === opt.incl ? "1.5px solid var(--brand-nordic)" : "1px solid var(--border-subtle)",
+                      background: splitIncludesGst === opt.incl ? "var(--brand-nordic-bg)" : "var(--bg-input)",
+                      color: splitIncludesGst === opt.incl ? "var(--text-main)" : "var(--text-secondary)",
+                      cursor: "pointer",
+                      textAlign: "left"
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 600 }}>{opt.label}</div>
+                    <div style={{ fontSize: "10.5px", color: "var(--text-muted)", marginTop: "2px" }}>{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p id="expense-gst-hint" style={{ fontSize: "11px", color: "var(--text-muted)", margin: "6px 0 0" }}>
+              Record how much of this expense is GST. "Excludes GST" splits only the base amount and attributes the GST to whoever paid.
+            </p>
+          </div>
+
           {/* Paid By */}
           <div className="form-group">
             <label className="form-label" htmlFor="expense-paid-by">
@@ -518,6 +610,20 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
             </div>
           )}
 
+          {/* GST-over-total guard shown inline in the preview area */}
+          {livePreview.gstExceedsTotal && (
+            <div style={{
+              padding: "10px 14px",
+              background: "var(--expense-bg)",
+              border: "1px solid var(--expense-border)",
+              color: "var(--expense-rose)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "12.5px"
+            }}>
+              GST amount cannot be more than the total amount.
+            </div>
+          )}
+
           {/* Live Split Calculation Card */}
           {livePreview.valid && (
             <div style={{
@@ -540,6 +646,13 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
               <div style={{ textAlign: "right", fontSize: "12px", color: "var(--text-secondary)" }}>
                 <div>Total: <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-main)", fontWeight: 600 }}>{formatPaiseToRupees(livePreview.amountPaise)}</span></div>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Split among {livePreview.targetMembers.length} member{livePreview.targetMembers.length > 1 ? "s" : ""}</div>
+                {livePreview.gstPaise > 0 && (
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+                    {splitIncludesGst
+                      ? `Includes GST ${formatPaiseToRupees(livePreview.gstPaise)}`
+                      : `GST ${formatPaiseToRupees(livePreview.gstPaise)} attributed to ${paidBy}`}
+                  </div>
+                )}
               </div>
             </div>
           )}

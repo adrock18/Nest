@@ -20,6 +20,7 @@ export function computeTravelDashboard(trips: Trip[], expenses: TripExpense[], m
   let personalPaise = 0;
   let groupPaise = 0;
   let paidByMePaise = 0;
+  let gstPaise = 0; // Whole-paise sum of GST recorded on this month's expenses
   const categories = new Map<TravelCategory, number>();
   const tripSpent = new Map<string, number>();
   for (const expense of validExpenses) {
@@ -29,10 +30,11 @@ export function computeTravelDashboard(trips: Trip[], expenses: TripExpense[], m
     personalPaise = addPaise(personalPaise, expense.mySharePaise);
     groupPaise = addPaise(groupPaise, expense.amountPaise);
     if (expense.paidBy === "Me") paidByMePaise = addPaise(paidByMePaise, expense.amountPaise);
+    gstPaise = addPaise(gstPaise, expense.gstPaise ?? 0);
     categories.set(expense.category, addPaise(categories.get(expense.category) || 0, expense.mySharePaise));
   }
   return {
-    personalPaise, groupPaise, paidByMePaise,
+    personalPaise, groupPaise, paidByMePaise, gstPaise,
     tripCount: new Set(monthlyExpenses.map((expense) => expense.tripId)).size,
     entries: monthlyExpenses.map((expense) => ({ expense, trip: tripMap.get(expense.tripId)! })),
     categories: [...categories].map(([category, spentPaise]) => ({ category, spentPaise }))
@@ -229,6 +231,50 @@ export function computeExpenseShares(
 
   const mySharePaise = perMemberShares[myName] || 0;
 
+  return { mySharePaise, perMemberShares };
+}
+
+/**
+ * GST-aware split. A thin, pure wrapper over computeExpenseShares.
+ *
+ * - splitIncludesGst = true (default, current behaviour): the FULL amountPaise
+ *   (GST included) is split among the members with the zero-lost-paise rule.
+ * - splitIncludesGst = false: only the base amount (amountPaise - gstPaise) is
+ *   split among the members, and the whole gstPaise is attributed to the payer
+ *   (added onto the payer's share, even when the payer is "Me"). The per-member
+ *   shares still sum EXACTLY to amountPaise.
+ *
+ * gstPaise is clamped to the valid range 0..=amountPaise at the engine boundary
+ * (the modal enforces the hard validation error). All arithmetic is whole paise.
+ */
+export function computeExpenseSharesWithGst(
+  amountPaise: number,
+  gstPaise: number,
+  splitIncludesGst: boolean,
+  paidBy: string,
+  splitMembers: string[],
+  myName: string = "Me"
+): { mySharePaise: number; perMemberShares: Record<string, number> } {
+  // Clamp GST into a safe whole-paise range so the engine never produces a
+  // negative base or a share that overshoots the total.
+  const safeGst = Math.min(Math.max(Math.round(gstPaise || 0), 0), Math.max(amountPaise, 0));
+
+  if (splitIncludesGst || safeGst === 0) {
+    // Current behaviour: split the whole amount (GST folded into the shares).
+    return computeExpenseShares(amountPaise, paidBy, splitMembers, myName);
+  }
+
+  // Split only the base (ex-GST) amount among members...
+  const basePaise = amountPaise - safeGst;
+  const { perMemberShares } = computeExpenseShares(basePaise, paidBy, splitMembers, myName);
+
+  // ...then attribute the entire GST portion to the payer. If the payer was not
+  // part of the split (e.g. paid but didn't participate), still add their GST so
+  // the per-member shares reconcile exactly to amountPaise.
+  const payer = paidBy || myName;
+  perMemberShares[payer] = (perMemberShares[payer] || 0) + safeGst;
+
+  const mySharePaise = perMemberShares[myName] || 0;
   return { mySharePaise, perMemberShares };
 }
 
