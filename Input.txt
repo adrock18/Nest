@@ -1,0 +1,43 @@
+Couple of things:
+1. In the Add Expense section, there are two plus signs twice, like +, + Add Expense. Verify this and fix it.
+2. Trip addition with comma rejects issue. Sometimes name.name is being taken as one name, like Vrusha. Ketan is taking us as one name. Any other alternate way to add people?
+3. In the category, symbols are very bland, just using white color. Add more color to it and make them more appealing.
+Next, I will give you a scenario. Try to implement this in the travel section. I'll give an entire trip and whatever details regarding the trip. Run this. The actual application has been improved, and verify it and make changes accordingly.
+Let's start:
+- Trip name would be Surfing.
+- Location would be
+- People: me, A, B, C, D, E, F.
+- Dates: 23 October to 25 October 2026.
+- Expense on 23 October: 3 pm to 7 pm, travel by train. Train name, let's say ABC. Ticket should be attached. Verify this part. Within the scope of Scout, or it should be present in Nest in this version or future version, or in the ideas section.
+- The train travels from Bangalore to Mysore. The ticket price for the train is around 700 bucks. You can get the details from the ticket.
+- After reaching Mysore, second travel is auto, traveling from the railway station to the bus stop point: ₹300.
+Dinner at around 8 pm. The auto reaches there by 7:30, so 8 pm dinner. Restaurant name, let's say XYZ.
+Bought food: masala dosa, 1 plate. Price: let's say around ₹200. Next, we can add the bill of the restaurant. Again, verify this is in scope. It should be in scope or should be in next and future applications, whatever. Just verify. 
+Okay, I can't keep saying to verify the scope again. You automatically verify scope. I'll just proceed with the paragraphs.
+Next, let's begin:
+- Walked around for a couple of meters.
+- Went to a supermarket.
+- Bought chips and yogurt for, let's say, around 100 bucks at the bill from the supermarket.
+- For each of these things, just verify the location. Add it in the GPS part, whatever feature we have for GPS.
+- Came back to the restaurant and had a soda. Same restaurant from before.
+- The bill of the order should be there. Also, see if there is a way to do that GST calculation and how much you're spending on GST. Let the GST part be included for the transaction, but I want a small portion of how much I'm spending towards GST in the dashboard page of the travel also.
+- For all the bills and all the amounts being there, because you'll have the receipt, in the future we'll implement OCR. From that, we can extract it. For now, we can add it manually also if you want (optional), but you get the point.
+- Bus travel, let's say around 800 bucks from Mysore to Udupi. Travel from 10 pm to Udupi at 6 am. From the Udupi bus stand, it was a service bus stand. From there, took an auto to the Airbnb. Let's call the Airbnb CKY Stay. For 1 day, it was roughly around 1,200 bucks. It was split from my side and paid by c for 6 people, or how many people are there?
+I guess this will be part of the split part. For verification, just multiply 1,200 by 6 people, and then let's implement the split feature to check and verify if it's working or not.
+Since the stay is roughly from the 24th to the 25th, 2 days, multiply the spent amount by 2 days and then verify the split is being done.
+- 24th: from the house stay to the surfing area. That's called Surfing Area XYZ Token Auto. 4 people, 400: do the split.
+- Surfing lessons: 1,800. My split was paid by A. I gave him the split, so do the split again for 6 people: 1,200, 1,800 into 6 people. My share is 1,200, 1,800 in that, obviously. Surfing for 2 hours.
+- Rented 2 bikes, 2 scooties. Each of those scooties cost around 400 bucks, split among 2 people, since 1 person took the bike and 2 people sit on the scooty. Split for each. Paid by A, so I paid my 200 share to him. Do this calculation also.
+- Lunch: from the homestay back to the restaurant called Nemo's. The bill of the restaurant was roughly around 7,000 bucks, paid by D party for his brother E, so we didn't have to pay any amount in that. It was all his expense.
+- Travel from the home state to Animos again, roughly around 250 bucks, split among 3 people. Paid by me, 250 bucks. They gave me the splits. Do that calculation part.
+- After eating at the restaurant, we went out. I bought sugarcane for myself, 30 bucks. Then we walked back all the way to the homestay and enjoyed it a couple of times.
+- At night, there was a birthday party for E. Since we knew it was a piss party, B and I went on a bike and bought a cake. The cake cost around 1,500 bucks, split among 4 people, since D and E are brothers and it's E's birthday party. Obviously, not 5 people, 4 people split the cake, paid by B. We gave him the split. Do the calculation again.
+- We ate dinner at roughly around 9:30, back to Nemo's. Walked all the way there, spent around 6,500 bucks. Spent by D again, but this time it's a split, not a party, so my share would roughly come around 1,300 bucks. I ate prawns, a fish, and a drink. This all should be calculated from the bill. Once you scan the bill, I think it should be an OCR feature. From the bill, you can extract, and then I can select what all I ate, what others ate, and stuff like that. Or for now, we can do manual entry. Then I will mention what I ate, the amount and prices of it, and the split will be done. There should be an option for the split to be plus GST or without the GST.
+- Slept on the 24th, done on the 25th. On the 25th, went and traveled by cab in the morning around 6:30. Traveled to, let's say, a place called Q, roughly around a 1-hour journey. Costed around 900 bucks for 5 people. Paid by me. Do the split calculations. All of them paid back. Went there, watched the triathlon event, came back. Again, same cab, I mean a different cab. 900 bucks again, 5 people. Paid by C this time. Do the split.
+Now, came back to a restaurant called Denzo. Bought some wedge food. It's near Nemo, so it's a walkable distance. I didn't eat anything. The rest of the guys ate. Paid, but the bill was paid by me. 2,500 got split with the GST included this time for myself. Since I didn't eat anything, they all paid me with the GST. The bill should be there again. We can extract details from the bill and stuff like that. Can be future or present, whatever. Can be manual for now.
+
+Next, rank myself: sugarcane, 30 bucks on myself, on sugarcane again. Sometimes, like sugarcane and stuff like this, you don't get the bill necessarily. That is not there, but sometimes, for restaurants and high-level stuff, you get to get a bill. Again, figure out how to handle that part of the situation.
+
+Next, went on a ferry ride. 400 bucks per person, it was, paid by C. We all paid him, and the split was done. We traveled from the location of the restaurant to an island called Ferry Island. Spent around roughly 2 hours there. Bought an ice cream there for 40 bucks myself.
+
+Came back from the ride and walked to the homestay. Booked an auto from the homestay to the service bus stand for us, roughly around 250 bucks. Went down to the bus, back to Bangalore direct. The bus cost around 2,100 bucks. Was an AC sleeper. Include the bus payment and the bus ticket, and also the travel journey and whatever necessary details you can find manually, or you can do the easier way in the future. The AC or the OCA with it 
