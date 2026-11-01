@@ -163,6 +163,60 @@
 .travel-ledger-title { font-weight: 600; color: var(--text-main); }
 .travel-ledger-notes { font-size: 11px; color: var(--text-muted); }
 .travel-cat-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+/* Trip companions chip/tag input (AddTripModal). Committed names render as
+   removable pills inside a bordered box that also holds the typing field, so
+   the whole control reads as one input. Theme variables keep it correct in
+   both dark and light. */
+.trip-members-chipbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  min-height: 42px;
+  background: var(--bg-input, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: text;
+}
+.trip-members-chipbox:focus-within { border-color: var(--border-medium); }
+.trip-member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+.trip-member-chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+.trip-member-chip-remove:hover { color: var(--text-main); }
+.trip-members-chip-input {
+  flex: 1 1 120px;
+  min-width: 120px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-size: 13px;
+  padding: 2px 4px;
+}
+.trip-members-chip-input::placeholder { color: var(--text-muted); }
 .travel-ledger-icon-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; }
 .travel-ledger-total-row td { border-top: 2px solid var(--border-medium); background: var(--bg-card); padding-top: 12px; padding-bottom: 12px; }
 .travel-ledger-total-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); text-align: right; }

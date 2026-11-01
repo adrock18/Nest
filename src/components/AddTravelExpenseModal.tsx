@@ -214,14 +214,17 @@ export const AddTravelExpenseModal: React.FC<AddTravelExpenseModalProps> = ({
   };
 
   const renderCategoryIcon = (cat: TravelCategory) => {
+    // Tint each icon with its own category colour from TRAVEL_CATEGORIES so the
+    // header chip, category grid and previews stay colourful in both themes.
+    const color = TRAVEL_CATEGORIES[cat].color;
     switch (cat) {
-      case "activities": return <Waves size={14} />;
-      case "stay": return <Hotel size={14} />;
-      case "food": return <UtensilsCrossed size={14} />;
-      case "transport": return <Plane size={14} />;
-      case "fuel": return <Fuel size={14} />;
-      case "shopping": return <ShoppingBag size={14} />;
-      default: return <Ticket size={14} />;
+      case "activities": return <Waves size={14} color={color} />;
+      case "stay": return <Hotel size={14} color={color} />;
+      case "food": return <UtensilsCrossed size={14} color={color} />;
+      case "transport": return <Plane size={14} color={color} />;
+      case "fuel": return <Fuel size={14} color={color} />;
+      case "shopping": return <ShoppingBag size={14} color={color} />;
+      default: return <Ticket size={14} color={color} />;
     }
   };
 

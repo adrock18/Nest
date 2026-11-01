@@ -168,14 +168,18 @@ export const TravelView: React.FC<TravelViewProps> = ({
   };
 
   const renderCategoryIcon = (cat: TravelCategory) => {
+    // Each travel category carries its own accent colour in TRAVEL_CATEGORIES.
+    // Tint the icon with that colour so category icons are visually distinct
+    // (not bland white) and consistent across every place they render.
+    const color = TRAVEL_CATEGORIES[cat].color;
     switch (cat) {
-      case "activities": return <Waves size={14} />;
-      case "stay": return <Hotel size={14} />;
-      case "food": return <UtensilsCrossed size={14} />;
-      case "transport": return <Plane size={14} />;
-      case "fuel": return <Fuel size={14} />;
-      case "shopping": return <ShoppingBag size={14} />;
-      default: return <Ticket size={14} />;
+      case "activities": return <Waves size={14} color={color} />;
+      case "stay": return <Hotel size={14} color={color} />;
+      case "food": return <UtensilsCrossed size={14} color={color} />;
+      case "transport": return <Plane size={14} color={color} />;
+      case "fuel": return <Fuel size={14} color={color} />;
+      case "shopping": return <ShoppingBag size={14} color={color} />;
+      default: return <Ticket size={14} color={color} />;
     }
   };
 
@@ -670,7 +674,7 @@ export const TravelView: React.FC<TravelViewProps> = ({
                           style={{ padding: "6px 14px", fontSize: "12px", background: themeColor, borderColor: themeColor }}
                         >
                           <Plus size={14} />
-                          <span>+ Add Expense</span>
+                          <span>Add Expense</span>
                         </button>
                       </div>
                     </div>

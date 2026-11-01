@@ -64,7 +64,12 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(nextWeekStr);
   const [budgetString, setBudgetString] = useState("");
-  const [membersInput, setMembersInput] = useState("Me, Aarav, Pooja, Vikram");
+  // Companions are kept as a chip list. "Me" is always present (and non-removable)
+  // and is derived in `displayMembers`, so `memberChips` holds only the others.
+  const DEFAULT_MEMBER_CHIPS = ["Aarav", "Pooja", "Vikram"];
+  const [memberChips, setMemberChips] = useState<string[]>(DEFAULT_MEMBER_CHIPS);
+  // `memberBuffer` is the name the user is currently typing before committing it.
+  const [memberBuffer, setMemberBuffer] = useState("");
   const [coverColor, setCoverColor] = useState("#06b6d4");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,7 +83,9 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
         setStartDate(initialTrip.startDate);
         setEndDate(initialTrip.endDate);
         setBudgetString(initialTrip.budgetPaise > 0 ? formatPaiseToDecimal(initialTrip.budgetPaise) : "");
-        setMembersInput(initialTrip.members.join(", "));
+        // Seed chips from the saved members, dropping "Me" (it is always shown).
+        setMemberChips(initialTrip.members.filter((m) => m !== "Me"));
+        setMemberBuffer("");
         setCoverColor(initialTrip.coverColor || "#06b6d4");
       } else {
         setName("");
@@ -86,7 +93,8 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
         setStartDate(todayStr);
         setEndDate(nextWeekStr);
         setBudgetString("");
-        setMembersInput("Me, Aarav, Pooja, Vikram");
+        setMemberChips(DEFAULT_MEMBER_CHIPS);
+        setMemberBuffer("");
         setCoverColor("#06b6d4");
       }
       setError(null);
@@ -95,20 +103,39 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Parsed companions list
-  const parsedMembers = membersInput
-    .split(/[,;\n]+/)
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
-  const displayMembers = Array.from(new Set(parsedMembers.length > 0 ? parsedMembers : ["Me"]));
-  if (!displayMembers.includes("Me")) {
-    displayMembers.unshift("Me");
-  }
+  // Final companions list the Trip contract expects: "Me" first, then the
+  // committed chips, trimmed and de-duplicated (case-insensitive on the name).
+  const displayMembers = Array.from(new Set(["Me", ...memberChips]));
+
+  // Commit the typing buffer as a chip. Trims, ignores empties, and prevents
+  // duplicates (including "Me", which is always present and cannot be re-added).
+  const commitMemberBuffer = () => {
+    const name = memberBuffer.trim();
+    setMemberBuffer("");
+    if (!name) return;
+    const exists =
+      name.toLowerCase() === "me" ||
+      memberChips.some((m) => m.toLowerCase() === name.toLowerCase());
+    if (exists) return;
+    setMemberChips((prev) => [...prev, name]);
+  };
+
+  // Enter or comma commits the current name; Backspace on an empty field
+  // removes the last chip. A period is NOT a separator, so "Vrusha.Ketan"
+  // stays a single companion name.
+  const handleMemberKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commitMemberBuffer();
+    } else if (e.key === "Backspace" && memberBuffer.length === 0 && memberChips.length > 0) {
+      e.preventDefault();
+      setMemberChips((prev) => prev.slice(0, -1));
+    }
+  };
 
   const handleRemoveMember = (nameToRemove: string) => {
     if (nameToRemove === "Me") return;
-    const remaining = displayMembers.filter((m) => m !== nameToRemove);
-    setMembersInput(remaining.join(", "));
+    setMemberChips((prev) => prev.filter((m) => m !== nameToRemove));
   };
 
   // Duration calculation
@@ -157,6 +184,17 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
       }
     }
 
+    // Fold any name still in the typing buffer into the committed list so a
+    // companion typed but not yet "Entered" is not silently dropped on save.
+    const pending = memberBuffer.trim();
+    const finalMembers = Array.from(
+      new Set([
+        "Me",
+        ...memberChips,
+        ...(pending && pending.toLowerCase() !== "me" ? [pending] : [])
+      ])
+    );
+
     setIsSaving(true);
     try {
       if (initialTrip && onUpdateTrip) {
@@ -167,7 +205,7 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
           startDate,
           endDate,
           budgetPaise,
-          members: displayMembers,
+          members: finalMembers,
           coverColor
         });
       } else {
@@ -177,7 +215,7 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
           startDate,
           endDate,
           budgetPaise,
-          members: displayMembers,
+          members: finalMembers,
           coverColor
         });
       }
@@ -420,64 +458,36 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
             >
               <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                 <Users size={12} color={coverColor} />
-                <span>Trip Companions (Comma-separated)</span>
+                <span>Trip Companions</span>
               </span>
               <span style={{ fontSize: "10.5px", fontWeight: 400, color: "var(--text-muted)", textTransform: "none" }}>
                 Used for split expense calculations
               </span>
             </label>
-            <input 
-              id="trip-members"
-              type="text"
-              placeholder="e.g. Me, Aarav, Pooja, Vikram"
-              value={membersInput}
-              onChange={(e) => setMembersInput(e.target.value)}
-              className="form-input"
-            />
 
-            {/* Interactive Companion Chips */}
-            <div style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "6px",
-              marginTop: "4px"
-            }}>
+            {/* Chip/tag input: committed companion chips sit inline with the
+                text field. Typing a name and pressing Enter (or comma) commits
+                it as a removable chip. "Me" is always present and non-removable. */}
+            <div
+              className="trip-members-chipbox"
+              onClick={() => document.getElementById("trip-members")?.focus()}
+            >
               {displayMembers.map((m) => {
                 const isMe = m === "Me";
                 return (
-                  <span 
+                  <span
                     key={m}
-                    style={{
-                      fontSize: "11.5px",
-                      padding: "4px 10px",
-                      borderRadius: "6px",
-                      background: isMe ? `${coverColor}22` : "var(--bg-card)",
-                      color: isMe ? coverColor : "var(--text-secondary)",
-                      border: isMe ? `1px solid ${coverColor}55` : "1px solid var(--border-subtle)",
-                      fontWeight: 500,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px"
-                    }}
+                    className={`trip-member-chip${isMe ? " is-me" : ""}`}
+                    style={isMe ? { background: `${coverColor}22`, color: coverColor, borderColor: `${coverColor}55` } : undefined}
                   >
                     <span>{isMe ? "👤 Me (You)" : m}</span>
                     {!isMe && (
                       <button
                         type="button"
-                        onClick={() => handleRemoveMember(m)}
+                        className="trip-member-chip-remove"
+                        onClick={(e) => { e.stopPropagation(); handleRemoveMember(m); }}
                         title={`Remove ${m}`}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted)",
-                          cursor: "pointer",
-                          padding: 0,
-                          margin: 0,
-                          lineHeight: 1,
-                          fontSize: "13px",
-                          display: "flex",
-                          alignItems: "center"
-                        }}
+                        aria-label={`Remove companion ${m}`}
                       >
                         ×
                       </button>
@@ -485,9 +495,20 @@ export const AddTripModal: React.FC<AddTripModalProps> = ({
                   </span>
                 );
               })}
+              <input
+                id="trip-members"
+                type="text"
+                className="trip-members-chip-input"
+                placeholder={displayMembers.length <= 1 ? "Type a name, press Enter" : "Add another…"}
+                value={memberBuffer}
+                onChange={(e) => setMemberBuffer(e.target.value)}
+                onKeyDown={handleMemberKeyDown}
+                onBlur={commitMemberBuffer}
+                aria-label="Add a trip companion, press Enter or comma to add"
+              />
             </div>
             <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "3px 0 0" }}>
-              Keep <strong>"Me"</strong> for yourself. You can add or remove friends at any time.
+              Press <strong>Enter</strong> or <strong>comma</strong> to add each companion. <strong>"Me"</strong> always stays. A period is part of the name (e.g. "Vrusha.Ketan").
             </p>
           </div>
 
